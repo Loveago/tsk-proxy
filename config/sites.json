@@ -1,0 +1,66 @@
+{
+  "sites": {
+    "lufak": {
+      "name": "Lufak E-Commerce Store",
+      "webhookUrl": "https://store.lufak.com/api/v1/paystack/webhook",
+      "callbackUrl": "https://store.lufak.com/checkout/complete",
+      "secret": "lufak_internal_secret_key",
+      "referencePrefixes": [
+        "lufak",
+        "tsk_store",
+        "tsk_wallet",
+        "tsk_data"
+      ],
+      "referencePatterns": [
+        "^lufak_.*",
+        "^tsk_(store|wallet|data)_.*",
+        "^gh_.*"
+      ],
+      "flowRoutes": {
+        "wallet": "https://store.lufak.com/dashboard/wallet/success",
+        "checkout": "https://store.lufak.com/checkout/complete"
+      }
+    },
+    "saas": {
+      "name": "SaaS Platform Billing",
+      "webhookUrl": "https://app.saasplatform.io/billing/webhook",
+      "callbackUrl": "https://app.saasplatform.io/billing/verify",
+      "secret": "saas_internal_secret_key",
+      "referencePrefixes": [
+        "saas",
+        "sub"
+      ],
+      "referencePatterns": [
+        "^saas_.*",
+        "^saas-.*"
+      ],
+      "flowRoutes": {
+        "billing": "https://app.saasplatform.io/billing/verify",
+        "subscribe": "https://app.saasplatform.io/billing/success"
+      }
+    },
+    "academy": {
+      "name": "Digital Academy",
+      "webhookUrl": "https://academy.example.com/api/payment/paystack",
+      "callbackUrl": "https://academy.example.com/enrollment/complete",
+      "secret": "academy_internal_secret_key",
+      "referencePrefixes": [
+        "academy",
+        "course"
+      ],
+      "referencePatterns": [
+        "^academy_.*",
+        "^course_.*"
+      ],
+      "flowRoutes": {
+        "enroll": "https://academy.example.com/enrollment/complete"
+      }
+    },
+    "fallback": {
+      "name": "Default Ops Fallback Sink",
+      "webhookUrl": "https://ops.example.com/webhooks/paystack-unmatched",
+      "callbackUrl": "https://ops.example.com/checkout/failed",
+      "secret": "fallback_internal_secret_key"
+    }
+  }
+}

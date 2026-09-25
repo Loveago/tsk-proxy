@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+package-lock.json.bak
+
+# Production and build outputs
+frontend/.next/
+frontend/out/
+build/
+dist/
+
+# Environment files and credentials
+.env
+.env*.local
+.env.production
+.env.development
+
+# SQLite and runtime databases
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite
+data/*.sqlite3
+!data/.gitkeep
+
+# Logs and debug files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Operating System files
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Editor and IDE configurations
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project

@@ -1,0 +1,2224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paystack Multi-Site Proxy — Management & Simulator Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <style>
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: #161f30;
+      --bg-hover: #1e293b;
+      --bg-input: #0d1424;
+      --border-color: #24324a;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      
+      --accent-primary: #00c389; /* Paystack Green */
+      --accent-hover: #00ab78;
+      --accent-glow: rgba(0, 195, 137, 0.25);
+      
+      --blue: #3b82f6;
+      --purple: #8b5cf6;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --cyan: #06b6d4;
+      
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      line-height: 1.5;
+      padding: 0;
+      overflow-x: hidden;
+    }
+
+    /* Header & Navigation */
+    header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+
+    .header-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #00c389, #06b6d4);
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+
+    .brand-icon svg {
+      width: 22px;
+      height: 22px;
+      fill: #0a0e17;
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(0, 195, 137, 0.15);
+      color: var(--accent-primary);
+      border: 1px solid rgba(0, 195, 137, 0.3);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .system-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      background: var(--bg-card);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      box-shadow: 0 0 8px var(--accent-primary);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .btn {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: #24324a;
+      border-color: #3b82f6;
+    }
+
+    .btn-primary {
+      background: var(--accent-primary);
+      color: #0a0e17;
+      border: none;
+      font-weight: 600;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+
+    .btn-sm {
+      padding: 4px 9px;
+      font-size: 0.78rem;
+    }
+
+    /* Main Container */
+    .main-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    /* Metrics Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+
+    .metric-ingested::before { background: var(--blue); }
+    .metric-forwarded::before { background: var(--accent-primary); }
+    .metric-duplicates::before { background: var(--purple); }
+    .metric-retries::before { background: var(--amber); }
+    .metric-deadletters::before { background: var(--red); }
+    .metric-uptime::before { background: var(--cyan); }
+
+    .metric-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .metric-value {
+      font-size: 1.85rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Tabs Bar */
+    .tabs-bar {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 24px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 10px 18px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+
+    .tab-btn.active {
+      color: var(--accent-primary);
+      background: rgba(0, 195, 137, 0.1);
+      font-weight: 600;
+    }
+
+    .tab-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: var(--bg-hover);
+      color: var(--text-secondary);
+      padding: 2px 6px;
+      border-radius: 10px;
+    }
+
+    .tab-btn.active .tab-badge {
+      background: var(--accent-primary);
+      color: #0a0e17;
+    }
+
+    /* Tab Content Panes */
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* Content Cards & Sections */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.15);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-body {
+      padding: 20px;
+    }
+
+    /* Event Logs Table */
+    .table-container {
+      overflow-x: auto;
+      width: 100%;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+
+    th {
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      font-weight: 600;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .badge-success { background: rgba(0, 195, 137, 0.15); color: var(--accent-primary); border: 1px solid rgba(0, 195, 137, 0.3); }
+    .badge-processing { background: rgba(59, 130, 246, 0.15); color: var(--blue); border: 1px solid rgba(59, 130, 246, 0.3); }
+    .badge-queued { background: rgba(6, 182, 212, 0.15); color: var(--cyan); border: 1px solid rgba(6, 182, 212, 0.3); }
+    .badge-retrying { background: rgba(245, 158, 11, 0.15); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-deadletter { background: rgba(239, 68, 68, 0.15); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-duplicate { background: rgba(139, 92, 246, 0.15); color: var(--purple); border: 1px solid rgba(139, 92, 246, 0.3); }
+    .badge-unroutable { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-site { background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); font-family: var(--font-mono); }
+
+    .code-pill {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      background: var(--bg-input);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      color: #93c5fd;
+    }
+
+    /* Filters Bar */
+    .filter-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .search-input {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+    }
+
+    .filter-select {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    /* Simulator Form Layout */
+    .simulator-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 1024px) {
+      .simulator-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 600px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      font-family: inherit;
+      transition: border-color 0.15s ease;
+    }
+
+    textarea {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.4;
+      resize: vertical;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 2px rgba(0, 195, 137, 0.15);
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .radio-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.83rem;
+      color: var(--text-primary);
+      cursor: pointer;
+      text-transform: none;
+      font-weight: normal;
+      background: var(--bg-input);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+    }
+
+    .radio-label:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .preset-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .chip {
+      background: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .chip:hover {
+      color: var(--text-primary);
+      border-color: var(--accent-primary);
+      background: rgba(0, 195, 137, 0.08);
+    }
+
+    /* Output Console / Snippet Box */
+    .console-box {
+      background: #070a10;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: #e2e8f0;
+      overflow-x: auto;
+      max-height: 380px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .signature-box {
+      background: #080c14;
+      border: 1px solid #1e293b;
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #34d399;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      word-break: break-all;
+    }
+
+    /* Sites List Grid */
+    .sites-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .site-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+
+    .site-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .site-name {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .site-url-block {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      font-size: 0.78rem;
+    }
+
+    .site-url-title {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+      font-weight: 600;
+    }
+
+    .site-url-val {
+      font-family: var(--font-mono);
+      color: #93c5fd;
+      word-break: break-all;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 12px 18px;
+      border-radius: var(--radius-md);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast-success {
+      border-left: 4px solid var(--accent-primary);
+    }
+
+    .toast-error {
+      border-left: 4px solid var(--red);
+    }
+
+    /* Modal / Drawer for Details */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      max-width: 700px;
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      stroke: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    /* Helpers */
+    .text-success { color: var(--accent-primary); }
+    .text-danger { color: var(--red); }
+    .text-warning { color: var(--amber); }
+    .text-mono { font-family: var(--font-mono); }
+    .truncate { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="header-container">
+      <a href="/" class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#0a0e17" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">
+            Paystack Proxy
+            <span class="brand-badge" id="envBadge">DEVELOPMENT</span>
+          </div>
+          <div style="font-size: 0.72rem; color: var(--text-muted);">Multi-Site Webhook Dispatcher & Callback Gateway</div>
+        </div>
+      </a>
+
+      <div class="header-actions">
+        <div class="system-status">
+          <span class="status-dot"></span>
+          <span id="healthStatusText">Operational</span>
+          <span style="color: var(--border-color);">|</span>
+          <span id="uptimeHeader">0m</span>
+        </div>
+
+        <button class="btn" id="btnRefresh" title="Refresh metrics and events">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Refresh
+        </button>
+
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-secondary); cursor: pointer; margin: 0;">
+          <input type="checkbox" id="autoRefreshToggle" checked>
+          <span>Live Sync</span>
+        </label>
+
+        <div id="userBadgeWrapper" style="display: none; align-items: center; gap: 8px;">
+          <span class="brand-badge" id="currentUserBadge" style="background: rgba(0, 195, 137, 0.15); color: var(--accent-primary); border-color: rgba(0, 195, 137, 0.3);">admin</span>
+          <button class="btn btn-danger" id="btnLogout" style="padding: 5px 10px; font-size: 0.75rem;">Log Out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Login Modal Overlay -->
+  <div id="loginOverlay" style="display: none; position: fixed; inset: 0; background: rgba(10, 14, 23, 0.85); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 32px; width: 100%; max-width: 400px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="width: 48px; height: 48px; background: rgba(0, 195, 137, 0.15); border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; color: var(--accent-primary);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        </div>
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 0 0 6px 0;">Admin Sign In</h2>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;">Sign in to access Paystack Proxy configuration and management.</p>
+      </div>
+
+      <div id="loginError" style="display: none; background: rgba(255, 77, 77, 0.15); border: 1px solid rgba(255, 77, 77, 0.3); color: #ff6b6b; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 0.78rem; margin-bottom: 16px;"></div>
+
+      <form id="loginForm" style="display: flex; flex-direction: column; gap: 14px;">
+        <div class="form-group" style="margin: 0;">
+          <label style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 4px; display: block;">Username</label>
+          <input type="text" id="loginUsername" required placeholder="admin" value="admin" style="font-family: var(--font-mono);">
+        </div>
+        <div class="form-group" style="margin: 0;">
+          <label style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 4px; display: block;">Password</label>
+          <input type="password" id="loginPassword" required placeholder="••••••••••••" style="font-family: var(--font-mono);">
+        </div>
+        <button type="submit" id="btnLoginSubmit" class="btn btn-primary" style="margin-top: 8px; justify-content: center; width: 100%;">
+          Sign In
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="main-container">
+
+    <!-- Metrics Cards Row -->
+    <section class="metrics-grid">
+      <div class="metric-card metric-ingested">
+        <div class="metric-title">
+          <span>Ingested</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+        </div>
+        <div class="metric-value" id="valIngested">0</div>
+        <div class="metric-sub">Total Paystack webhook events</div>
+      </div>
+
+      <div class="metric-card metric-forwarded">
+        <div class="metric-title">
+          <span>Forwarded</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        </div>
+        <div class="metric-value" id="valForwarded">0</div>
+        <div class="metric-sub" id="subForwardRate">0% downstream success rate</div>
+      </div>
+
+      <div class="metric-card metric-duplicates">
+        <div class="metric-title">
+          <span>Duplicates</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </div>
+        <div class="metric-value" id="valDuplicates">0</div>
+        <div class="metric-sub">Idempotent replays suppressed</div>
+      </div>
+
+      <div class="metric-card metric-retries">
+        <div class="metric-title">
+          <span>Retries In-Flight</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+        </div>
+        <div class="metric-value" id="valRetries">0</div>
+        <div class="metric-sub" id="subActiveJobs">0 active queued retries</div>
+      </div>
+
+      <div class="metric-card metric-deadletters">
+        <div class="metric-title">
+          <span>Dead Letters</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+        </div>
+        <div class="metric-value" id="valDeadLetters">0</div>
+        <div class="metric-sub" id="subUnroutable">0 unroutable events</div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-bar">
+      <button class="tab-btn active" data-tab="tab-events">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        Live Event Log
+        <span class="tab-badge" id="badgeEventsCount">0</span>
+      </button>
+
+      <button class="tab-btn" data-tab="tab-simulator">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        Webhook Simulator
+      </button>
+
+      <button class="tab-btn" data-tab="tab-verify">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        Transaction Lookup
+      </button>
+
+      <button class="tab-btn" data-tab="tab-sites">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+        Configured Sites
+        <span class="tab-badge" id="badgeSitesCount">0</span>
+      </button>
+
+      <button class="tab-btn" data-tab="tab-health">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><activity x1="2" y1="12" x2="22" y2="12"></activity><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        Diagnostics & Endpoints
+      </button>
+    </nav>
+
+    <!-- Tab 1: Live Event Log -->
+    <div class="tab-pane active" id="tab-events">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>Recent Webhook Event Dispatches</span>
+          </div>
+
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select class="filter-select" id="logStatusFilter">
+              <option value="ALL">All Statuses</option>
+              <option value="SUCCESS">Success Only</option>
+              <option value="PROCESSING">Processing / In-Flight</option>
+              <option value="RETRYING">Retrying</option>
+              <option value="DEAD_LETTER">Dead Letter</option>
+              <option value="DUPLICATE">Duplicate Blocked</option>
+              <option value="UNROUTABLE">Unroutable</option>
+            </select>
+
+            <input type="text" class="search-input" id="logSearchInput" placeholder="Filter by reference, site, or event..." style="width: 250px;">
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Event Type</th>
+                <th>Target Site</th>
+                <th>Reference / Identifier</th>
+                <th>Attempts</th>
+                <th>Latency</th>
+                <th>Time</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="eventsTableBody">
+              <tr>
+                <td colspan="8" class="empty-state">
+                  <div>No webhook events recorded yet. Send a test webhook from the Simulator!</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Interactive Webhook Simulator -->
+    <div class="tab-pane" id="tab-simulator">
+      <div class="simulator-grid">
+        <!-- Simulator Form -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+              <span>Paystack Webhook Generator & Signer</span>
+            </div>
+            <span style="font-size: 0.78rem; color: var(--text-muted);">HMAC SHA512 Signature Authenticated</span>
+          </div>
+
+          <div class="card-body">
+            <!-- Quick Preset Chips -->
+            <label>Quick Event Presets</label>
+            <div class="preset-chips">
+              <span class="chip" data-preset="charge_success_500">charge.success (GH₵500.00)</span>
+              <span class="chip" data-preset="charge_success_10k">charge.success (GH₵10,000.00)</span>
+              <span class="chip" data-preset="subscription_create">subscription.create</span>
+              <span class="chip" data-preset="transfer_success">transfer.success</span>
+              <span class="chip" data-preset="invoice_create">invoice.create</span>
+              <span class="chip" data-preset="charge_failed">charge.failed</span>
+            </div>
+
+            <form id="simulatorForm">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="simSiteSelect">Target Child Site</label>
+                  <select id="simSiteSelect">
+                    <option value="">-- Auto-resolve via Reference / Metadata --</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="simEventType">Event Name</label>
+                  <input type="text" id="simEventType" value="charge.success" required>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="simReference">Transaction Reference</label>
+                  <div style="display: flex; gap: 8px;">
+                    <input type="text" id="simReference" placeholder="e.g. lufak_order_12345" required>
+                    <button type="button" class="btn" id="btnGenRef" title="Generate New Reference">↻</button>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="simAmount">Amount (in Pesewas / Cents)</label>
+                  <input type="number" id="simAmount" value="50000" step="1000" min="100">
+                  <span id="simAmountFormatted" style="font-size: 0.75rem; color: var(--accent-primary); margin-top: 3px; display: block;">GH₵500.00</span>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="simEmail">Customer Email</label>
+                  <input type="text" id="simEmail" value="tester@example.com">
+                </div>
+
+                <div class="form-group">
+                  <label>Routing Strategy</label>
+                  <div class="radio-group" style="padding-top: 4px;">
+                    <label class="radio-label">
+                      <input type="radio" name="simRouting" value="both" checked>
+                      <span>Both</span>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" name="simRouting" value="reference">
+                      <span>Ref Prefix</span>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" name="simRouting" value="metadata">
+                      <span>Metadata</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Computed Signature Preview -->
+              <div class="form-group">
+                <label>Calculated HMAC-SHA512 Signature (x-paystack-signature)</label>
+                <div class="signature-box">
+                  <span id="simComputedSig" class="truncate" style="max-width: 480px;">Calculating...</span>
+                  <button type="button" class="btn btn-sm" id="btnCopySig">Copy</button>
+                </div>
+              </div>
+
+              <!-- Collapsible Raw Payload Editor -->
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <label style="margin: 0;">Payload Preview (Editable JSON)</label>
+                  <button type="button" class="btn btn-sm" id="btnResetPayload">Reset to Form</button>
+                </div>
+                <textarea id="simPayloadJson" rows="7"></textarea>
+              </div>
+
+              <div style="display: flex; gap: 12px; align-items: center; margin-top: 8px;">
+                <button type="submit" class="btn btn-primary" id="btnSendSimulated">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                  Dispatch Webhook to Proxy
+                </button>
+                <span id="simLoadingStatus" style="font-size: 0.82rem; color: var(--text-secondary); display: none;">Dispatching...</span>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Simulator Result & cURL Snippet -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+              <span>Live Simulation Response</span>
+            </div>
+            <button class="btn btn-sm" id="btnCopyCurl" style="display: none;">Copy cURL</button>
+          </div>
+
+          <div class="card-body">
+            <div id="simEmptyResult" class="empty-state">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+              <div>Fill out the simulator form and click <strong>Dispatch Webhook</strong> to inspect live routing & delivery downstream.</div>
+            </div>
+
+            <div id="simActiveResult" style="display: none;">
+              <!-- Outcome Summary Banner -->
+              <div id="simResultBanner" style="padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <div id="simResultStatus" style="font-weight: 700; font-size: 0.95rem;">-</div>
+                  <div id="simResultMessage" style="font-size: 0.8rem; opacity: 0.9;">-</div>
+                </div>
+                <div id="simResolvedBadge" class="badge badge-site">-</div>
+              </div>
+
+              <!-- Details Grid -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; font-size: 0.82rem;">
+                <div style="background: var(--bg-input); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                  <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase;">Destination URL</div>
+                  <div id="simResUrl" class="text-mono truncate" style="color: #93c5fd;">-</div>
+                </div>
+                <div style="background: var(--bg-input); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                  <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase;">Match Type</div>
+                  <div id="simResMatchType" class="text-mono" style="color: #a7f3d0;">-</div>
+                </div>
+              </div>
+
+              <!-- cURL Snippet -->
+              <label>Reproduce with cURL</label>
+              <div class="console-box" id="simCurlSnippet" style="margin-bottom: 16px; max-height: 120px;"></div>
+
+              <!-- Response JSON -->
+              <label>Server Response JSON</label>
+              <div class="console-box" id="simResponseJson"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Transaction Lookup & Verification -->
+    <div class="tab-pane" id="tab-verify">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span>Paystack Transaction Verification Inspector</span>
+          </div>
+          <span style="font-size: 0.78rem; color: var(--text-muted);">Direct Paystack API Verification & Site Routing Matcher</span>
+        </div>
+
+        <div class="card-body">
+          <div style="max-width: 650px; margin-bottom: 24px;">
+            <label for="verifyRefInput">Transaction Reference</label>
+            <div style="display: flex; gap: 10px;">
+              <input type="text" id="verifyRefInput" placeholder="Enter reference (e.g. lufak_order_12345)" class="text-mono">
+              <button class="btn btn-primary" id="btnDoVerify">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                Verify Reference
+              </button>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">
+              Quick references:
+              <span id="quickRefList" style="display: inline-flex; gap: 6px; margin-left: 4px;"></span>
+            </div>
+          </div>
+
+          <div id="verifyResultContainer" style="display: none;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+              <!-- Verification Summary Card -->
+              <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 16px;">
+                <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 12px;">Transaction Details</div>
+                
+                <table style="font-size: 0.82rem;">
+                  <tr>
+                    <td style="color: var(--text-muted); width: 140px;">Status:</td>
+                    <td id="vfStatus">-</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted);">Amount:</td>
+                    <td id="vfAmount" style="font-weight: 700; color: var(--text-primary);">-</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted);">Customer:</td>
+                    <td id="vfCustomer">-</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted);">Channel:</td>
+                    <td id="vfChannel" class="text-mono">-</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted);">Gateway Response:</td>
+                    <td id="vfGateway">-</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted);">Paid At:</td>
+                    <td id="vfPaidAt">-</td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- Routing Resolution Card -->
+              <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 16px;">
+                <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 12px;">Proxy Site Resolution</div>
+                
+                <table style="font-size: 0.82rem;">
+                  <tr>
+                    <td style="color: var(--text-muted); width: 140px;">Target Site:</td>
+                    <td id="vfResolvedSite">-</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted);">Match Strategy:</td>
+                    <td id="vfMatchType" class="text-mono">-</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted);">Callback URL:</td>
+                    <td id="vfCallbackUrl" class="text-mono truncate" style="color: #93c5fd;">-</td>
+                  </tr>
+                  <tr>
+                    <td style="color: var(--text-muted);">Webhook URL:</td>
+                    <td id="vfWebhookUrl" class="text-mono truncate" style="color: #93c5fd;">-</td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+
+            <label>Raw Paystack Verification Response</label>
+            <div class="console-box" id="vfRawJson" style="max-height: 250px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Configured Child Sites -->
+    <div class="tab-pane" id="tab-sites">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            <span>Configured Child Sites (config/sites.json)</span>
+          </div>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Downstream destinations for webhooks and callback redirects</span>
+        </div>
+
+        <div class="card-body">
+          <div class="sites-grid" id="sitesGridContainer">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 5: Diagnostics & Endpoints -->
+    <div class="tab-pane" id="tab-health">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+        <!-- System Specs Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Proxy Runtime Health</div>
+          </div>
+          <div class="card-body">
+            <table style="font-size: 0.85rem;">
+              <tr>
+                <td style="color: var(--text-muted); width: 160px;">Node.js Runtime:</td>
+                <td id="diagNode" class="text-mono">-</td>
+              </tr>
+              <tr>
+                <td style="color: var(--text-muted);">Storage Engine:</td>
+                <td id="diagStorage" class="text-mono">-</td>
+              </tr>
+              <tr>
+                <td style="color: var(--text-muted);">Process Uptime:</td>
+                <td id="diagUptime">-</td>
+              </tr>
+              <tr>
+                <td style="color: var(--text-muted);">Heap Memory:</td>
+                <td id="diagHeap" class="text-mono">-</td>
+              </tr>
+              <tr>
+                <td style="color: var(--text-muted);">RSS Memory:</td>
+                <td id="diagRss" class="text-mono">-</td>
+              </tr>
+              <tr>
+                <td style="color: var(--text-muted);">IP Whitelist:</td>
+                <td id="diagIpWhitelist">-</td>
+              </tr>
+              <tr>
+                <td style="color: var(--text-muted);">Paystack Secret:</td>
+                <td id="diagSecret">-</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- Endpoints Cheatsheet Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Production Endpoints Cheatsheet</div>
+          </div>
+          <div class="card-body">
+            <div style="font-size: 0.82rem; display: flex; flex-direction: column; gap: 12px;">
+              <div>
+                <span class="badge badge-success">POST</span>
+                <span class="code-pill">/api/v1/paystack/webhook</span>
+                <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px;">Primary Paystack webhook ingestion (requires <code class="text-mono">x-paystack-signature</code>).</div>
+              </div>
+
+              <div>
+                <span class="badge badge-processing">GET</span>
+                <span class="code-pill">/api/v1/paystack/callback?reference=...</span>
+                <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px;">Customer return redirector after Paystack checkout.</div>
+              </div>
+
+              <div>
+                <span class="badge badge-queued">GET</span>
+                <span class="code-pill">/health</span>
+                <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px;">Liveness probe for AWS/Kubernetes/monitoring.</div>
+              </div>
+
+              <div>
+                <span class="badge badge-queued">GET</span>
+                <span class="code-pill">/metrics</span>
+                <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px;">Prometheus & APM metrics endpoint.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Event Detail Modal -->
+  <div class="modal-overlay" id="eventModal">
+    <div class="modal-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>Webhook Event Details</span>
+          <span id="modalStatusBadge" class="badge">-</span>
+        </div>
+        <button class="btn btn-sm" id="btnModalClose">✕ Close</button>
+      </div>
+      <div class="card-body">
+        <table style="font-size: 0.82rem; margin-bottom: 16px;">
+          <tr>
+            <td style="color: var(--text-muted); width: 140px;">Event Key:</td>
+            <td id="modalEventKey" class="text-mono" style="color: #93c5fd;">-</td>
+          </tr>
+          <tr>
+            <td style="color: var(--text-muted);">Target Site:</td>
+            <td id="modalSiteKey" class="text-mono">-</td>
+          </tr>
+          <tr>
+            <td style="color: var(--text-muted);">Destination URL:</td>
+            <td id="modalTargetUrl" class="text-mono truncate" style="color: #93c5fd;">-</td>
+          </tr>
+          <tr>
+            <td style="color: var(--text-muted);">Correlation ID:</td>
+            <td id="modalCorrelationId" class="text-mono">-</td>
+          </tr>
+          <tr>
+            <td style="color: var(--text-muted);">Attempts:</td>
+            <td id="modalAttempts">-</td>
+          </tr>
+          <tr>
+            <td style="color: var(--text-muted);">Error:</td>
+            <td id="modalError" style="color: var(--red); word-break: break-all;">None</td>
+          </tr>
+          <tr>
+            <td style="color: var(--text-muted);">Recorded At:</td>
+            <td id="modalCreatedAt">-</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification element -->
+  <div class="toast" id="toast">
+    <span id="toastMessage">Notification message</span>
+  </div>
+
+  <!-- Dashboard Client Logic -->
+  <script>
+    // State
+    const state = {
+      sites: [],
+      events: [],
+      stats: null,
+      autoRefresh: true,
+      refreshInterval: null,
+      selectedSiteKey: '',
+    };
+
+    // DOM Elements
+    const elements = {
+      valIngested: document.getElementById('valIngested'),
+      valForwarded: document.getElementById('valForwarded'),
+      subForwardRate: document.getElementById('subForwardRate'),
+      valDuplicates: document.getElementById('valDuplicates'),
+      valRetries: document.getElementById('valRetries'),
+      subActiveJobs: document.getElementById('subActiveJobs'),
+      valDeadLetters: document.getElementById('valDeadLetters'),
+      subUnroutable: document.getElementById('subUnroutable'),
+      uptimeHeader: document.getElementById('uptimeHeader'),
+      badgeEventsCount: document.getElementById('badgeEventsCount'),
+      badgeSitesCount: document.getElementById('badgeSitesCount'),
+      envBadge: document.getElementById('envBadge'),
+      eventsTableBody: document.getElementById('eventsTableBody'),
+      logStatusFilter: document.getElementById('logStatusFilter'),
+      logSearchInput: document.getElementById('logSearchInput'),
+      sitesGridContainer: document.getElementById('sitesGridContainer'),
+      simSiteSelect: document.getElementById('simSiteSelect'),
+      simEventType: document.getElementById('simEventType'),
+      simReference: document.getElementById('simReference'),
+      simAmount: document.getElementById('simAmount'),
+      simAmountFormatted: document.getElementById('simAmountFormatted'),
+      simEmail: document.getElementById('simEmail'),
+      simComputedSig: document.getElementById('simComputedSig'),
+      simPayloadJson: document.getElementById('simPayloadJson'),
+      simulatorForm: document.getElementById('simulatorForm'),
+      btnSendSimulated: document.getElementById('btnSendSimulated'),
+      btnGenRef: document.getElementById('btnGenRef'),
+      btnResetPayload: document.getElementById('btnResetPayload'),
+      btnCopySig: document.getElementById('btnCopySig'),
+      btnCopyCurl: document.getElementById('btnCopyCurl'),
+      btnRefresh: document.getElementById('btnRefresh'),
+      autoRefreshToggle: document.getElementById('autoRefreshToggle'),
+      simEmptyResult: document.getElementById('simEmptyResult'),
+      simActiveResult: document.getElementById('simActiveResult'),
+      simResultBanner: document.getElementById('simResultBanner'),
+      simResultStatus: document.getElementById('simResultStatus'),
+      simResultMessage: document.getElementById('simResultMessage'),
+      simResolvedBadge: document.getElementById('simResolvedBadge'),
+      simResUrl: document.getElementById('simResUrl'),
+      simResMatchType: document.getElementById('simResMatchType'),
+      simCurlSnippet: document.getElementById('simCurlSnippet'),
+      simResponseJson: document.getElementById('simResponseJson'),
+      simLoadingStatus: document.getElementById('simLoadingStatus'),
+      verifyRefInput: document.getElementById('verifyRefInput'),
+      btnDoVerify: document.getElementById('btnDoVerify'),
+      verifyResultContainer: document.getElementById('verifyResultContainer'),
+      vfRawJson: document.getElementById('vfRawJson'),
+      quickRefList: document.getElementById('quickRefList'),
+      eventModal: document.getElementById('eventModal'),
+      btnModalClose: document.getElementById('btnModalClose'),
+      toast: document.getElementById('toast'),
+      toastMessage: document.getElementById('toastMessage'),
+      loginOverlay: document.getElementById('loginOverlay'),
+      loginForm: document.getElementById('loginForm'),
+      loginUsername: document.getElementById('loginUsername'),
+      loginPassword: document.getElementById('loginPassword'),
+      loginError: document.getElementById('loginError'),
+      btnLoginSubmit: document.getElementById('btnLoginSubmit'),
+      btnLogout: document.getElementById('btnLogout'),
+      currentUserBadge: document.getElementById('currentUserBadge'),
+    };
+
+    // Helper: Toast
+    function showToast(msg, isError = false) {
+      elements.toastMessage.textContent = msg;
+      elements.toast.className = `toast show ${isError ? 'toast-error' : 'toast-success'}`;
+      setTimeout(() => {
+        elements.toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // Helper: Format Relative Time
+    function formatTimeAgo(isoString) {
+      if (!isoString) return '-';
+      const sec = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+      if (sec < 5) return 'just now';
+      if (sec < 60) return `${sec}s ago`;
+      const min = Math.floor(sec / 60);
+      if (min < 60) return `${min}m ago`;
+      const hrs = Math.floor(min / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      return new Date(isoString).toLocaleDateString();
+    }
+
+    // Tab Navigation
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+
+        btn.classList.add('active');
+        const targetTab = btn.getAttribute('data-tab');
+        const pane = document.getElementById(targetTab);
+        if (pane) pane.classList.add('active');
+      });
+    });
+
+    // Helper: Format Currency
+    function formatPesewas(pesewas) {
+      const cedi = (Number(pesewas) || 0) / 100;
+      return new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS' }).format(cedi).replace('GHS', 'GH₵');
+    }
+
+    // Reference generator
+    function generateReference(siteKey) {
+      const rand = Math.random().toString(36).substring(2, 8);
+      const prefix = siteKey ? `${siteKey}_` : 'pay_';
+      return `${prefix}sim_${Date.now().toString(36)}_${rand}`;
+    }
+
+    // Sync Simulator Payload Preview from Form Inputs
+    async function updateSimulatorPayload() {
+      const siteKey = elements.simSiteSelect.value;
+      const eventType = elements.simEventType.value || 'charge.success';
+      const ref = elements.simReference.value || generateReference(siteKey);
+      const amount = Number(elements.simAmount.value) || 50000;
+      const email = elements.simEmail.value || 'customer@example.com';
+      const routing = document.querySelector('input[name="simRouting"]:checked')?.value || 'both';
+
+      elements.simAmountFormatted.textContent = formatPesewas(amount);
+
+      const metadata = {};
+      if ((routing === 'metadata' || routing === 'both') && siteKey) {
+        metadata.origin_site = siteKey;
+        metadata.custom_fields = [
+          { variable_name: 'origin_site', value: siteKey, display_name: 'Originating Site' }
+        ];
+      }
+
+      const payload = {
+        event: eventType,
+        data: {
+          id: 10000000 + Math.floor(Math.random() * 89999999),
+          domain: 'test',
+          status: 'success',
+          reference: ref,
+          amount: amount,
+          message: null,
+          gateway_response: 'Successful',
+          paid_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          channel: 'card',
+          currency: 'GHS',
+          ip_address: '127.0.0.1',
+          metadata: metadata,
+          customer: {
+            id: 999123,
+            first_name: 'Test',
+            last_name: 'Simulator',
+            email: email,
+            customer_code: 'CUS_sim_user'
+          }
+        }
+      };
+
+      const payloadStr = JSON.stringify(payload, null, 2);
+      elements.simPayloadJson.value = payloadStr;
+
+      // Helper: Authenticated Fetch
+      async function authFetch(url, options = {}) {
+        const token = localStorage.getItem('paystack_proxy_token');
+        const headers = {
+          ...options.headers,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        };
+        const res = await fetch(url, { ...options, headers });
+        if (res.status === 401 && !url.includes('/auth/login')) {
+          localStorage.removeItem('paystack_proxy_token');
+          showLoginModal();
+        }
+        return res;
+      }
+
+      function showLoginModal() {
+        elements.loginOverlay.style.display = 'flex';
+        elements.loginError.style.display = 'none';
+        elements.loginPassword.value = '';
+      }
+
+      // Calculate HMAC signature
+      try {
+        const res = await authFetch('/api/v1/dashboard/calculate-signature', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payload }),
+        });
+        const data = await res.json();
+        if (data.status) {
+          elements.simComputedSig.textContent = data.signature;
+        }
+      } catch (e) {
+        elements.simComputedSig.textContent = 'Error computing signature';
+      }
+    }
+
+    // Load Stats & Metrics
+    async function fetchStats() {
+      try {
+        const res = await authFetch('/api/v1/dashboard/stats');
+        const data = await res.json();
+        if (!data || data.status !== 'ok') return;
+
+        state.stats = data;
+        elements.valIngested.textContent = data.metrics.ingested.toLocaleString();
+        elements.valForwarded.textContent = data.metrics.forwarded.toLocaleString();
+        elements.valDuplicates.textContent = data.metrics.duplicates.toLocaleString();
+        elements.valRetries.textContent = (data.metrics.queuedRetries || 0).toLocaleString();
+        elements.valDeadLetters.textContent = data.metrics.deadLetters.toLocaleString();
+        elements.uptimeHeader.textContent = data.uptimeHuman || `${data.uptimeSeconds}s`;
+
+        const total = data.metrics.ingested;
+        const rate = total > 0 ? ((data.metrics.forwarded / total) * 100).toFixed(1) : '100';
+        elements.subForwardRate.textContent = `${rate}% downstream success rate`;
+        elements.subActiveJobs.textContent = `${data.metrics.activeJobs || 0} active jobs in queue`;
+        elements.subUnroutable.textContent = `${data.metrics.unroutable || 0} unroutable events`;
+        elements.envBadge.textContent = data.env.toUpperCase();
+
+        // Diagnostics
+        document.getElementById('diagNode').textContent = data.nodeVersion;
+        document.getElementById('diagStorage').textContent = data.storageType;
+        document.getElementById('diagUptime').textContent = data.uptimeHuman;
+        document.getElementById('diagHeap').textContent = `${data.memory.heapUsedMb} MB / ${data.memory.heapTotalMb} MB`;
+        document.getElementById('diagRss').textContent = `${data.memory.rssMb} MB`;
+        document.getElementById('diagIpWhitelist').textContent = data.ipWhitelistEnabled ? 'Enabled' : 'Disabled (Allow all)';
+        document.getElementById('diagSecret').textContent = data.secretConfigured ? 'Configured (Active)' : 'Not Configured';
+      } catch (err) {
+        console.error('Failed to fetch dashboard stats', err);
+      }
+    }
+
+    // Load Configured Sites
+    async function fetchSites() {
+      try {
+        const res = await authFetch('/api/v1/dashboard/sites');
+        const data = await res.json();
+        if (!data || !data.sites) return;
+
+        state.sites = data.sites;
+        elements.badgeSitesCount.textContent = data.count;
+
+        // Populate Simulator Dropdown
+        const currentSelected = elements.simSiteSelect.value;
+        elements.simSiteSelect.innerHTML = '<option value="">-- Auto-resolve via Reference / Metadata --</option>';
+        data.sites.forEach(site => {
+          const opt = document.createElement('option');
+          opt.value = site.key;
+          opt.textContent = `${site.key} — ${site.name}`;
+          elements.simSiteSelect.appendChild(opt);
+        });
+        if (currentSelected) elements.simSiteSelect.value = currentSelected;
+
+        // Render Sites Cards
+        elements.sitesGridContainer.innerHTML = '';
+        data.sites.forEach(site => {
+          const prefixesHtml = (Array.isArray(site.referencePrefixes) && site.referencePrefixes.length > 0)
+            ? `<div class="site-url-block"><div class="site-url-title">Reference Prefixes</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">${site.referencePrefixes.map(p => `<span class="badge badge-site" style="font-size:0.7rem;padding:2px 6px;">${escapeHtml(p)}</span>`).join('')}</div></div>`
+            : '';
+          const patternsHtml = (Array.isArray(site.referencePatterns) && site.referencePatterns.length > 0)
+            ? `<div class="site-url-block"><div class="site-url-title">Reference Patterns</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">${site.referencePatterns.map(pat => `<span class="badge badge-queued" style="font-size:0.7rem;padding:2px 6px;font-family:monospace;">${escapeHtml(pat)}</span>`).join('')}</div></div>`
+            : '';
+          const flowsHtml = (site.flowRoutes && Object.keys(site.flowRoutes).length > 0)
+            ? `<div class="site-url-block"><div class="site-url-title">Flow Callback Routes</div><div style="display:flex;flex-direction:column;gap:3px;margin-top:4px;font-size:0.75rem;">${Object.entries(site.flowRoutes).map(([flow, url]) => `<div><span class="badge badge-success" style="font-size:0.65rem;padding:1px 4px;">${escapeHtml(flow)}</span> <span class="text-mono" style="color:var(--text-muted);word-break:break-all;">${escapeHtml(url)}</span></div>`).join('')}</div></div>`
+            : '';
+
+          const card = document.createElement('div');
+          card.className = 'site-card';
+          card.innerHTML = `
+            <div class="site-card-header">
+              <div>
+                <span class="badge badge-site" style="margin-bottom: 4px;">site: ${escapeHtml(site.key)}</span>
+                <div class="site-name">${escapeHtml(site.name)}</div>
+              </div>
+              <button class="btn btn-sm btn-ping-site" data-site="${escapeHtml(site.key)}" title="Ping downstream webhook endpoint">
+                ⚡ Ping
+              </button>
+            </div>
+
+            <div class="site-url-block">
+              <div class="site-url-title">Webhook Downstream URL</div>
+              <div class="site-url-val">${escapeHtml(site.webhookUrl || 'Not configured')}</div>
+            </div>
+
+            <div class="site-url-block">
+              <div class="site-url-title">Callback Return URL</div>
+              <div class="site-url-val">${escapeHtml(site.callbackUrl || 'Not configured')}</div>
+            </div>
+
+            ${prefixesHtml}
+            ${patternsHtml}
+            ${flowsHtml}
+
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; margin-top: 4px;">
+              <span style="color: var(--text-muted);">Internal Secret:</span>
+              <span class="badge ${site.hasSecret ? 'badge-success' : 'badge-queued'}">
+                ${site.hasSecret ? 'Configured' : 'Using Global Secret'}
+              </span>
+            </div>
+
+            <div id="ping-status-${escapeHtml(site.key)}" style="font-size: 0.78rem; display: none; margin-top: 4px; padding: 4px 8px; border-radius: 4px;"></div>
+          `;
+          elements.sitesGridContainer.appendChild(card);
+        });
+
+        // Add Ping Event Listeners
+        document.querySelectorAll('.btn-ping-site').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            const key = btn.getAttribute('data-site');
+            const statusDiv = document.getElementById(`ping-status-${key}`);
+            if (statusDiv) {
+              statusDiv.style.display = 'block';
+              statusDiv.style.background = 'rgba(59, 130, 246, 0.15)';
+              statusDiv.style.color = '#93c5fd';
+              statusDiv.textContent = 'Pinging endpoint...';
+            }
+
+            try {
+              const res = await authFetch(`/api/v1/dashboard/sites/${key}/ping`, { method: 'POST' });
+              const pingResult = await res.json();
+              if (statusDiv) {
+                if (pingResult.reachable) {
+                  statusDiv.style.background = 'rgba(0, 195, 137, 0.15)';
+                  statusDiv.style.color = 'var(--accent-primary)';
+                  statusDiv.textContent = `Reachable (${pingResult.durationMs}ms) — HTTP ${pingResult.httpStatus || 200}`;
+                } else {
+                  statusDiv.style.background = 'rgba(239, 68, 68, 0.15)';
+                  statusDiv.style.color = 'var(--red)';
+                  statusDiv.textContent = `Down: ${pingResult.error || 'Connection failed'} (${pingResult.durationMs}ms)`;
+                }
+              }
+            } catch (err) {
+              if (statusDiv) {
+                statusDiv.style.background = 'rgba(239, 68, 68, 0.15)';
+                statusDiv.style.color = 'var(--red)';
+                statusDiv.textContent = `Error: ${err.message}`;
+              }
+            }
+          });
+        });
+      } catch (err) {
+        console.error('Failed to fetch sites', err);
+      }
+    }
+
+    // Load Events Log
+    async function fetchEvents() {
+      try {
+        const res = await authFetch('/api/v1/dashboard/events?limit=50');
+        const data = await res.json();
+        if (!data || !data.events) return;
+
+        state.events = data.events;
+        elements.badgeEventsCount.textContent = data.count;
+        renderEventsTable();
+        updateQuickRefList();
+      } catch (err) {
+        console.error('Failed to fetch events', err);
+      }
+    }
+
+    function renderEventsTable() {
+      const filter = elements.logStatusFilter.value;
+      const search = elements.logSearchInput.value.toLowerCase().trim();
+
+      const filtered = state.events.filter(ev => {
+        if (filter !== 'ALL' && ev.status !== filter) return false;
+        if (search) {
+          const matchEvent = (ev.eventType || '').toLowerCase().includes(search);
+          const matchRef = (ev.reference || '').toLowerCase().includes(search);
+          const matchSite = (ev.siteKey || '').toLowerCase().includes(search);
+          const matchErr = (ev.error || '').toLowerCase().includes(search);
+          if (!matchEvent && !matchRef && !matchSite && !matchErr) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        elements.eventsTableBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="empty-state">
+              <div>No webhook events matching current filters.</div>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      elements.eventsTableBody.innerHTML = '';
+      filtered.forEach(ev => {
+        const tr = document.createElement('tr');
+        
+        let statusBadgeClass = 'badge-queued';
+        if (ev.status === 'SUCCESS') statusBadgeClass = 'badge-success';
+        else if (ev.status === 'PROCESSING') statusBadgeClass = 'badge-processing';
+        else if (ev.status === 'RETRYING') statusBadgeClass = 'badge-retrying';
+        else if (ev.status === 'DEAD_LETTER') statusBadgeClass = 'badge-deadletter';
+        else if (ev.status === 'DUPLICATE') statusBadgeClass = 'badge-duplicate';
+        else if (ev.status === 'UNROUTABLE') statusBadgeClass = 'badge-unroutable';
+
+        const latencyText = ev.durationMs != null ? `${ev.durationMs}ms` : '-';
+        const attemptsText = ev.status === 'DUPLICATE' || ev.status === 'UNROUTABLE'
+          ? '-'
+          : `${ev.attempts || 1}/${ev.maxRetries || 4}`;
+
+        tr.innerHTML = `
+          <td><span class="badge ${statusBadgeClass}">${escapeHtml(ev.status)}</span></td>
+          <td><strong class="text-mono" style="color: #f1f5f9;">${escapeHtml(ev.eventType || 'unknown')}</strong></td>
+          <td><span class="badge badge-site">${escapeHtml(ev.siteKey || '(none)')}</span></td>
+          <td><span class="code-pill">${escapeHtml(ev.reference || '-')}</span></td>
+          <td class="text-mono" style="color: var(--text-muted);">${attemptsText}</td>
+          <td class="text-mono" style="color: #a7f3d0;">${latencyText}</td>
+          <td style="color: var(--text-muted); font-size: 0.78rem;" title="${escapeHtml(ev.createdAt || '')}">${formatTimeAgo(ev.createdAt)}</td>
+          <td>
+            <button class="btn btn-sm btn-inspect-event" data-id="${escapeHtml(ev.id)}">Inspect</button>
+          </td>
+        `;
+        elements.eventsTableBody.appendChild(tr);
+      });
+
+      // Add inspect event listeners
+      document.querySelectorAll('.btn-inspect-event').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const ev = state.events.find(e => e.id === id);
+          if (ev) openEventModal(ev);
+        });
+      });
+    }
+
+    function updateQuickRefList() {
+      const refs = [];
+      state.events.forEach(ev => {
+        if (ev.reference && !refs.includes(ev.reference)) refs.push(ev.reference);
+      });
+
+      elements.quickRefList.innerHTML = '';
+      refs.slice(0, 3).forEach(r => {
+        const span = document.createElement('span');
+        span.className = 'chip';
+        span.textContent = r;
+        span.style.padding = '2px 8px';
+        span.style.fontSize = '0.72rem';
+        span.addEventListener('click', () => {
+          elements.verifyRefInput.value = r;
+          doVerifyTransaction(r);
+        });
+        elements.quickRefList.appendChild(span);
+      });
+    }
+
+    function openEventModal(ev) {
+      document.getElementById('modalEventKey').textContent = ev.eventKey || `${ev.eventType}:${ev.reference}`;
+      document.getElementById('modalSiteKey').textContent = ev.siteKey || '(unresolved)';
+      document.getElementById('modalTargetUrl').textContent = ev.targetUrl || '(none)';
+      document.getElementById('modalCorrelationId').textContent = ev.correlationId || '-';
+      document.getElementById('modalAttempts').textContent = `${ev.attempts || 0} / ${ev.maxRetries || 0}`;
+      document.getElementById('modalError').textContent = ev.error || 'None (Delivered successfully)';
+      document.getElementById('modalCreatedAt').textContent = ev.createdAt || '-';
+
+      const badge = document.getElementById('modalStatusBadge');
+      badge.textContent = ev.status;
+      badge.className = `badge ${
+        ev.status === 'SUCCESS' ? 'badge-success' :
+        ev.status === 'DEAD_LETTER' ? 'badge-deadletter' :
+        ev.status === 'RETRYING' ? 'badge-retrying' :
+        ev.status === 'DUPLICATE' ? 'badge-duplicate' :
+        ev.status === 'UNROUTABLE' ? 'badge-unroutable' : 'badge-queued'
+      }`;
+
+      elements.eventModal.classList.add('open');
+    }
+
+    elements.btnModalClose.addEventListener('click', () => {
+      elements.eventModal.classList.remove('open');
+    });
+
+    elements.eventModal.addEventListener('click', (e) => {
+      if (e.target === elements.eventModal) elements.eventModal.classList.remove('open');
+    });
+
+    // Preset chips click handler
+    document.querySelectorAll('.preset-chips .chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const preset = chip.getAttribute('data-preset');
+        const siteKey = elements.simSiteSelect.value || 'lufak';
+
+        if (preset === 'charge_success_500') {
+          elements.simEventType.value = 'charge.success';
+          elements.simAmount.value = 50000;
+          elements.simReference.value = generateReference(siteKey);
+        } else if (preset === 'charge_success_10k') {
+          elements.simEventType.value = 'charge.success';
+          elements.simAmount.value = 1000000;
+          elements.simReference.value = generateReference(siteKey);
+        } else if (preset === 'subscription_create') {
+          elements.simEventType.value = 'subscription.create';
+          elements.simAmount.value = 150000;
+          elements.simReference.value = `saas_sub_${Date.now().toString(36)}`;
+        } else if (preset === 'transfer_success') {
+          elements.simEventType.value = 'transfer.success';
+          elements.simAmount.value = 250000;
+          elements.simReference.value = `trf_${Date.now().toString(36)}`;
+        } else if (preset === 'invoice_create') {
+          elements.simEventType.value = 'invoice.create';
+          elements.simAmount.value = 75000;
+          elements.simReference.value = `inv_${Date.now().toString(36)}`;
+        } else if (preset === 'charge_failed') {
+          elements.simEventType.value = 'charge.failed';
+          elements.simAmount.value = 20000;
+          elements.simReference.value = generateReference(siteKey);
+        }
+
+        updateSimulatorPayload();
+      });
+    });
+
+    // Simulator Form Submit
+    elements.simulatorForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      elements.btnSendSimulated.disabled = true;
+      elements.simLoadingStatus.style.display = 'inline';
+
+      let parsedPayload = null;
+      try {
+        parsedPayload = JSON.parse(elements.simPayloadJson.value);
+      } catch (err) {
+        showToast('Invalid JSON in payload editor', true);
+        elements.btnSendSimulated.disabled = false;
+        elements.simLoadingStatus.style.display = 'none';
+        return;
+      }
+
+      const siteKey = elements.simSiteSelect.value;
+      const routing = document.querySelector('input[name="simRouting"]:checked')?.value || 'both';
+
+      try {
+        const response = await authFetch('/api/v1/dashboard/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customPayload: parsedPayload,
+            siteKey,
+            routingMechanism: routing,
+          }),
+        });
+
+        const result = await response.json();
+
+        // Render Result Card
+        elements.simEmptyResult.style.display = 'none';
+        elements.simActiveResult.style.display = 'block';
+        elements.btnCopyCurl.style.display = 'inline-flex';
+
+        elements.simResponseJson.textContent = JSON.stringify(result, null, 2);
+        elements.simCurlSnippet.textContent = result.curlExample || 'cURL snippet not available';
+
+        if (result.duplicate) {
+          elements.simResultBanner.style.background = 'rgba(139, 92, 246, 0.15)';
+          elements.simResultBanner.style.border = '1px solid rgba(139, 92, 246, 0.3)';
+          elements.simResultStatus.textContent = 'Duplicate Event Suppressed';
+          elements.simResultStatus.style.color = 'var(--purple)';
+          elements.simResultMessage.textContent = result.message;
+          elements.simResolvedBadge.textContent = 'Idempotent Duplicate';
+          elements.simResUrl.textContent = 'Suppressed (No downstream forward)';
+          elements.simResMatchType.textContent = 'idempotency_key';
+          showToast('Duplicate event intercepted by proxy!');
+        } else if (result.unroutable) {
+          elements.simResultBanner.style.background = 'rgba(245, 158, 11, 0.15)';
+          elements.simResultBanner.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+          elements.simResultStatus.textContent = 'Unroutable Event';
+          elements.simResultStatus.style.color = 'var(--amber)';
+          elements.simResultMessage.textContent = result.message;
+          elements.simResolvedBadge.textContent = 'Unroutable';
+          elements.simResUrl.textContent = 'None (No matching child site)';
+          elements.simResMatchType.textContent = 'unmatched';
+          showToast('Webhook unroutable to any configured site', true);
+        } else {
+          elements.simResultBanner.style.background = 'rgba(0, 195, 137, 0.15)';
+          elements.simResultBanner.style.border = '1px solid rgba(0, 195, 137, 0.3)';
+          elements.simResultStatus.textContent = 'Dispatched Successfully';
+          elements.simResultStatus.style.color = 'var(--accent-primary)';
+          elements.simResultMessage.textContent = result.message;
+          elements.simResolvedBadge.textContent = `site: ${result.resolvedSite}`;
+          elements.simResUrl.textContent = result.targetUrl || '-';
+          elements.simResMatchType.textContent = result.matchType || '-';
+          showToast(`Dispatched to ${result.resolvedSite} (${result.matchType})!`);
+        }
+
+        // Immediately trigger refresh of stats & event log
+        await Promise.all([fetchStats(), fetchEvents()]);
+      } catch (err) {
+        showToast(`Simulation failed: ${err.message}`, true);
+      } finally {
+        elements.btnSendSimulated.disabled = false;
+        elements.simLoadingStatus.style.display = 'none';
+      }
+    });
+
+    // Transaction Verification
+    async function doVerifyTransaction(ref) {
+      if (!ref) {
+        showToast('Please enter a transaction reference', true);
+        return;
+      }
+
+      elements.btnDoVerify.disabled = true;
+      elements.btnDoVerify.textContent = 'Verifying...';
+
+      try {
+        const res = await authFetch(`/api/v1/dashboard/verify/${encodeURIComponent(ref)}`);
+        const data = await res.json();
+
+        elements.verifyResultContainer.style.display = 'block';
+        elements.vfRawJson.textContent = JSON.stringify(data, null, 2);
+
+        const v = data.verification || {};
+        const vData = v.data || {};
+
+        document.getElementById('vfStatus').innerHTML = vData.status
+          ? `<span class="badge ${vData.status === 'success' ? 'badge-success' : 'badge-retrying'}">${vData.status}</span>`
+          : `<span class="badge badge-deadletter">${v.message || 'Error'}</span>`;
+
+        document.getElementById('vfAmount').textContent = vData.amount ? formatPesewas(vData.amount) : 'N/A';
+        document.getElementById('vfCustomer').textContent = vData.customer?.email || 'N/A';
+        document.getElementById('vfChannel').textContent = vData.channel || 'N/A';
+        document.getElementById('vfGateway').textContent = vData.gateway_response || 'N/A';
+        document.getElementById('vfPaidAt').textContent = vData.paid_at ? new Date(vData.paid_at).toLocaleString() : 'N/A';
+
+        // Resolved site info
+        if (data.resolvedSite) {
+          document.getElementById('vfResolvedSite').innerHTML = `<span class="badge badge-site">${escapeHtml(data.resolvedSite.name)} (${data.resolvedSite.key})</span>`;
+          document.getElementById('vfMatchType').textContent = data.resolvedSite.matchType || 'N/A';
+          document.getElementById('vfCallbackUrl').textContent = data.resolvedSite.callbackUrl || 'N/A';
+          document.getElementById('vfWebhookUrl').textContent = data.resolvedSite.webhookUrl || 'N/A';
+        } else {
+          document.getElementById('vfResolvedSite').textContent = 'None (Unmatched)';
+          document.getElementById('vfMatchType').textContent = 'unmatched';
+          document.getElementById('vfCallbackUrl').textContent = 'N/A';
+          document.getElementById('vfWebhookUrl').textContent = 'N/A';
+        }
+
+        showToast(v.success ? 'Transaction verified with Paystack API' : 'Paystack API verification completed');
+      } catch (err) {
+        showToast(`Verification request error: ${err.message}`, true);
+      } finally {
+        elements.btnDoVerify.disabled = false;
+        elements.btnDoVerify.innerHTML = `
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          Verify Reference
+        `;
+      }
+    }
+
+    elements.btnDoVerify.addEventListener('click', () => {
+      doVerifyTransaction(elements.verifyRefInput.value.trim());
+    });
+
+    elements.verifyRefInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        doVerifyTransaction(elements.verifyRefInput.value.trim());
+      }
+    });
+
+    // Form Event Listeners
+    elements.simSiteSelect.addEventListener('change', () => {
+      const siteKey = elements.simSiteSelect.value;
+      elements.simReference.value = generateReference(siteKey);
+      updateSimulatorPayload();
+    });
+
+    elements.btnGenRef.addEventListener('click', () => {
+      const siteKey = elements.simSiteSelect.value;
+      elements.simReference.value = generateReference(siteKey);
+      updateSimulatorPayload();
+    });
+
+    elements.simEventType.addEventListener('input', updateSimulatorPayload);
+    elements.simReference.addEventListener('input', updateSimulatorPayload);
+    elements.simAmount.addEventListener('input', updateSimulatorPayload);
+    elements.simEmail.addEventListener('input', updateSimulatorPayload);
+    document.querySelectorAll('input[name="simRouting"]').forEach(r => r.addEventListener('change', updateSimulatorPayload));
+
+    elements.btnResetPayload.addEventListener('click', updateSimulatorPayload);
+
+    async function copyToClipboard(text, successMsg) {
+      if (!text) return;
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          showToast(successMsg);
+          return;
+        }
+      } catch (e) {
+        // Fall back to execCommand
+      }
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (success) {
+          showToast(successMsg);
+        } else {
+          showToast('Please copy manually', true);
+        }
+      } catch (err) {
+        showToast('Clipboard copy failed: ' + err.message, true);
+      }
+    }
+
+    elements.btnCopySig.addEventListener('click', () => {
+      copyToClipboard(elements.simComputedSig.textContent, 'HMAC signature copied to clipboard');
+    });
+
+    elements.btnCopyCurl.addEventListener('click', () => {
+      copyToClipboard(elements.simCurlSnippet.textContent, 'cURL command copied to clipboard');
+    });
+
+    elements.logStatusFilter.addEventListener('change', renderEventsTable);
+    elements.logSearchInput.addEventListener('input', renderEventsTable);
+
+    elements.btnRefresh.addEventListener('click', async () => {
+      await Promise.all([fetchStats(), fetchSites(), fetchEvents()]);
+      showToast('Dashboard refreshed');
+    });
+
+    elements.autoRefreshToggle.addEventListener('change', (e) => {
+      state.autoRefresh = e.target.checked;
+      if (state.autoRefresh) {
+        startPolling();
+        showToast('Live Sync enabled (every 3s)');
+      } else {
+        stopPolling();
+        showToast('Live Sync paused');
+      }
+    });
+
+    function startPolling() {
+      if (state.refreshInterval) clearInterval(state.refreshInterval);
+      state.refreshInterval = setInterval(() => {
+        if (state.autoRefresh) {
+          fetchStats();
+          fetchEvents();
+        }
+      }, 3000);
+    }
+
+    function stopPolling() {
+      if (state.refreshInterval) {
+        clearInterval(state.refreshInterval);
+        state.refreshInterval = null;
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Login Form Submit Listener
+    elements.loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      elements.btnLoginSubmit.disabled = true;
+      elements.btnLoginSubmit.textContent = 'Verifying...';
+      elements.loginError.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/v1/dashboard/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: elements.loginUsername.value,
+            password: elements.loginPassword.value,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.status && data.token) {
+          localStorage.setItem('paystack_proxy_token', data.token);
+          elements.currentUserBadge.textContent = data.user?.username || 'admin';
+          document.getElementById('userBadgeWrapper').style.display = 'flex';
+          elements.loginOverlay.style.display = 'none';
+          showToast(`Welcome back, ${data.user?.username || 'admin'}!`);
+          await init();
+        } else {
+          elements.loginError.textContent = data.message || 'Invalid username or password';
+          elements.loginError.style.display = 'block';
+        }
+      } catch (err) {
+        elements.loginError.textContent = 'Connection error: ' + err.message;
+        elements.loginError.style.display = 'block';
+      } finally {
+        elements.btnLoginSubmit.disabled = false;
+        elements.btnLoginSubmit.textContent = 'Sign In';
+      }
+    });
+
+    // Logout Button Listener
+    elements.btnLogout.addEventListener('click', async () => {
+      try {
+        await authFetch('/api/v1/dashboard/auth/logout', { method: 'POST' });
+      } catch (e) {}
+      localStorage.removeItem('paystack_proxy_token');
+      document.getElementById('userBadgeWrapper').style.display = 'none';
+      stopPolling();
+      showToast('Logged out');
+      showLoginModal();
+    });
+
+    // Initialize Dashboard
+    async function init() {
+      elements.simReference.value = generateReference('lufak');
+      await Promise.all([fetchStats(), fetchSites(), fetchEvents()]);
+      updateSimulatorPayload();
+      startPolling();
+    }
+
+    // Check Authentication & Initialize
+    async function checkAuthAndInit() {
+      const token = localStorage.getItem('paystack_proxy_token');
+      if (!token) {
+        showLoginModal();
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/dashboard/auth/me', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          elements.currentUserBadge.textContent = data.user?.username || 'admin';
+          document.getElementById('userBadgeWrapper').style.display = 'flex';
+          elements.loginOverlay.style.display = 'none';
+          await init();
+        } else {
+          localStorage.removeItem('paystack_proxy_token');
+          showLoginModal();
+        }
+      } catch (e) {
+        showLoginModal();
+      }
+    }
+
+    checkAuthAndInit();
+  </script>
+</body>
+</html>
