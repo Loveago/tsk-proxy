@@ -108,7 +108,9 @@ export async function syncSitesWithDb(force = false) {
   const pool = getSitesPgPool();
   if (!pool) return sitesCache;
   const now = Date.now();
-  if (!force && now - lastSyncTime < 2000) {
+  // Force sync if cache is empty (cold start / first request), OR if caller requested force, OR if 2s throttle has elapsed
+  const cacheIsEmpty = Object.keys(sitesCache).length === 0;
+  if (!force && !cacheIsEmpty && now - lastSyncTime < 2000) {
     return sitesCache;
   }
   try {
