@@ -8,8 +8,9 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "dev:frontend": "npm --prefix frontend run dev",
-    "build:frontend": "npm --prefix frontend run build",
-    "build": "npm --prefix frontend run build && node scripts/build.js",
+    "postinstall": "npm --prefix frontend install",
+    "build:frontend": "npm --prefix frontend install && npm --prefix frontend run build",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build && node scripts/build.js",
     "test": "node --test test/**/*.test.js",
     "test:e2e": "node --test test/e2e.test.js test/live-server.test.js"
   },
