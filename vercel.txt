@@ -1,0 +1,392 @@
+================================================================================
+          PAYSTACK MULTI-SITE PROXY: THE COMPLETE VERCEL DEPLOYMENT GUIDE
+                       (Beginner-Friendly, Step-By-Step)
+================================================================================
+
+This guide is written so that anyone can deploy and set up this Paystack Proxy
+from start to finish without getting stuck.
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS:
+  Phase 1: What You Need Before You Start (Prerequisites)
+  Phase 2: Understanding How the Admin Account Works (No Seeding Needed!)
+  Phase 3: Step-by-Step Vercel Deployment (Click-by-Click)
+  Phase 4: Setting up Your Websites (Child Sites)
+  Phase 5: Pointing Paystack to Your Proxy
+  Phase 6: Setting Up Your Website Code (Checkout & Webhooks)
+  Phase 7: Testing & Verification (How to Confirm It Works)
+  Phase 8: Troubleshooting Common Beginner Errors
+================================================================================
+
+
+--------------------------------------------------------------------------------
+PHASE 1: WHAT YOU NEED BEFORE YOU START
+--------------------------------------------------------------------------------
+
+1. A free Vercel account: https://vercel.com
+2. A free GitHub account: https://github.com
+3. A Paystack account (Test or Live): https://dashboard.paystack.com
+4. Your website(s) where you want to accept payments.
+
+
+--------------------------------------------------------------------------------
+PHASE 2: HOW THE ADMIN ACCOUNT WORKS (IS IT A SEED?)
+--------------------------------------------------------------------------------
+
+QUESTION: "Do I need to run a database seed command to create the admin account?"
+ANSWER:   NO. You DO NOT need any database seeds or migration commands!
+
+The admin account is configured 100% through your Vercel Environment Variables:
+  - DASHBOARD_USERNAME = Your chosen username (e.g. "admin" or your name)
+  - DASHBOARD_PASSWORD = Your chosen secret password (e.g. "MySecretPass2026!")
+
+When you open your deployed Vercel site in your browser, the proxy reads those
+two variables and allows you to log in immediately. It also generates secure
+JWT session tokens using DASHBOARD_JWT_SECRET.
+
+
+--------------------------------------------------------------------------------
+PHASE 3: STEP-BY-STEP VERCEL DEPLOYMENT
+--------------------------------------------------------------------------------
+
+STEP 3.1: Push Your Code to GitHub
+---------------------------------
+Open your computer terminal or VS Code terminal in this project folder, and run:
+
+  git add .
+  git commit -m "Ready for Vercel deployment"
+  git branch -M main
+  git remote add origin https://github.com/YOUR_GITHUB_USERNAME/paystack-proxy.git
+  git push -u origin main
+
+(Note: The files `api/index.js` and `vercel.json` are already in your project
+and will be pushed automatically).
+
+
+STEP 3.2: Import the Project into Vercel
+----------------------------------------
+1. Go to https://vercel.com and log in.
+2. On your Vercel Dashboard, look at the top right and click the blue "Add New..." button.
+3. Click "Project".
+4. You will see a list of your GitHub repositories. Find your project repository
+   (e.g. `paystack-proxy` or `tsk-proxy`) and click the "Import" button next to it.
+
+
+STEP 3.3: Project Build Settings
+--------------------------------
+On the "Configure Project" screen:
+1. "Project Name": You can keep the default or name it `paystack-proxy`.
+2. "Framework Preset": Leave it as "Other" (or "Next.js").
+3. "Root Directory": Leave as `./` (do not change).
+4. "Build and Output Settings": Leave as default because our `vercel.json` file
+   automatically instructs Vercel to run `npm run build` and output `frontend/out`.
+
+
+STEP 3.4: Set Your Environment Variables (CRITICAL!)
+----------------------------------------------------
+Scroll down to the "Environment Variables" section on Vercel.
+Add each of the following variables one by one:
+
+================================================================================
+VARIABLE 1:
+  Key:   PAYSTACK_SECRET_KEY
+  Value: sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+         (Get this from your Paystack Dashboard -> Settings -> API Keys)
+--------------------------------------------------------------------------------
+VARIABLE 2:
+  Key:   PAYSTACK_WEBHOOK_SECRET
+  Value: (Paste the exact same key as PAYSTACK_SECRET_KEY above)
+--------------------------------------------------------------------------------
+VARIABLE 3:
+  Key:   PROXY_SHARED_SECRET
+  Value: Make up any random 32+ character text string.
+         Example: 9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c
+         (Used by child websites to verify requests came from your proxy)
+--------------------------------------------------------------------------------
+VARIABLE 4 (Your Admin Login Username):
+  Key:   DASHBOARD_USERNAME
+  Value: admin
+         (Or whatever username you want to type when logging in)
+--------------------------------------------------------------------------------
+VARIABLE 5 (Your Admin Login Password):
+  Key:   DASHBOARD_PASSWORD
+  Value: SetYourOwnStrongPasswordHere123!
+         (This is the password you will use to log into your dashboard!)
+--------------------------------------------------------------------------------
+VARIABLE 6:
+  Key:   DASHBOARD_JWT_SECRET
+  Value: Make up another random 32+ character text string.
+         Example: a1b2c3d4e5f67890123456789abcdef01234
+--------------------------------------------------------------------------------
+VARIABLE 7 (Database Storage Adapter):
+  Key:   QUEUE_STORAGE_TYPE
+  Value: postgres
+         (Using PostgreSQL allows your idempotency deduplication keys and
+          event logs to persist permanently across Vercel serverless cold starts!)
+--------------------------------------------------------------------------------
+VARIABLE 8 (PostgreSQL Connection String):
+  Key:   DATABASE_URL
+  Value: postgres://user:password@ep-cool-db.us-east-1.aws.neon.tech/neondb?sslmode=require
+         (You can create a free PostgreSQL database on Neon.tech, Supabase,
+          or Vercel Postgres / Marketplace -> Storage -> PostgreSQL, and paste the URL here.
+          If left empty, the proxy gracefully uses in-memory storage).
+--------------------------------------------------------------------------------
+VARIABLE 9:
+  Key:   ENABLE_IP_WHITELIST
+  Value: false
+         (Must be false on Vercel serverless because serverless IPs rotate)
+================================================================================
+
+
+STEP 3.5: Click Deploy
+----------------------
+1. Click the blue "Deploy" button at the bottom.
+2. Wait about 60 to 90 seconds while Vercel builds the code.
+3. You will see fireworks and "Congratulations! You just deployed a new Project".
+4. Copy your live Vercel URL!
+   It will look like:
+   https://paystack-proxy-yourname.vercel.app
+
+
+--------------------------------------------------------------------------------
+PHASE 4: SETTING UP YOUR WEBSITES (CHILD SITES)
+--------------------------------------------------------------------------------
+
+How does the proxy know which website should get which payment?
+You give each of your websites a simple "Site Key" (for example: `store` or `academy`).
+Whenever a customer buys something, the proxy looks at the payment reference prefix
+or metadata, finds the matching website, and forwards the event!
+
+You can configure your websites in either of two ways:
+
+METHOD 1: Using the Live Admin Dashboard (Easiest & Visual)
+-----------------------------------------------------------
+1. Open your live Vercel URL in your browser:
+   https://paystack-proxy-yourname.vercel.app
+2. Enter:
+   - Username: The `DASHBOARD_USERNAME` you set (e.g. `admin`)
+   - Password: The `DASHBOARD_PASSWORD` you set in Vercel
+3. Click "Log In".
+4. In the top navigation or sidebar, click on "Sites".
+5. Click "+ Add Site".
+6. Fill in the popup form:
+   - Site Identifier (Key): store
+   - Display Name: My Main Store
+   - Webhook URL: https://myshop.com/api/paystack-webhook
+     (The URL on your website that listens for successful orders)
+   - Callback Redirect URL: https://myshop.com/checkout/success
+     (The URL where customers should land after completing payment)
+   - Reference Prefixes: store, shop
+7. Click "Save Site".
+
+METHOD 2: Editing `config/sites.json` in Your Code
+--------------------------------------------------
+Alternatively, you can edit `config/sites.json` directly in your code editor:
+
+{
+  "sites": {
+    "store": {
+      "name": "My Main Store",
+      "webhookUrl": "https://myshop.com/api/paystack-webhook",
+      "callbackUrl": "https://myshop.com/checkout/success",
+      "secret": "store_secret_key_123",
+      "referencePrefixes": ["store", "shop"],
+      "referencePatterns": ["^store_.*", "^shop_.*"]
+    },
+    "academy": {
+      "name": "My Online Academy",
+      "webhookUrl": "https://academy.com/api/paystack-webhook",
+      "callbackUrl": "https://academy.com/course/welcome",
+      "secret": "academy_secret_key_123",
+      "referencePrefixes": ["academy", "course"],
+      "referencePatterns": ["^academy_.*", "^course_.*"]
+    },
+    "fallback": {
+      "name": "Default Ops Fallback Sink",
+      "webhookUrl": "https://ops.example.com/webhooks/unmatched",
+      "callbackUrl": "https://ops.example.com/checkout/failed",
+      "secret": "fallback_secret_key_123"
+    }
+  }
+}
+
+Whenever you push changes to `config/sites.json` on GitHub, Vercel will auto-deploy!
+
+
+--------------------------------------------------------------------------------
+PHASE 5: POINTING PAYSTACK TO YOUR PROXY
+--------------------------------------------------------------------------------
+
+Now connect your Paystack account to your new Vercel proxy:
+
+1. Log into your Paystack Dashboard:
+   https://dashboard.paystack.com/#/settings/developer
+2. Click on the "API Keys & Webhooks" tab.
+3. Under "Configuration":
+   - Find "Webhook URL" and paste:
+     https://paystack-proxy-yourname.vercel.app/api/v1/paystack/webhook
+     
+   - Find "Callback URL" and paste:
+     https://paystack-proxy-yourname.vercel.app/api/v1/paystack/callback
+
+4. Click "Save Changes".
+
+NOTE: You can do this in "Test Mode" first while testing, and then copy the
+exact same URLs to "Live Mode" when you are ready to go live!
+
+
+--------------------------------------------------------------------------------
+PHASE 6: SETTING UP YOUR WEBSITE CODE
+--------------------------------------------------------------------------------
+
+On each of your websites, there are only 2 small things to know:
+
+PART 1: When Creating Payments on Your Website
+----------------------------------------------
+Whenever your website asks Paystack to charge a customer, make sure your
+transaction `reference` starts with your website's key followed by an underscore `_`.
+
+Example 1: In JavaScript / Node.js / Next.js
+--------------------------------------------
+```javascript
+// On your store website when initiating checkout:
+const uniqueId = Date.now();
+const reference = `store_order_${uniqueId}`; // <-- Starts with "store_"
+
+const paystackResponse = await paystack.transaction.initialize({
+  email: customerEmail,
+  amount: 500000, // 5,000 NGN in kobo
+  reference: reference, // <-- Tells proxy to route this to "store"
+  metadata: {
+    origin_site: 'store' // (Optional bonus tag)
+  }
+});
+```
+
+Example 2: In PHP / WordPress / WooCommerce
+-------------------------------------------
+```php
+$reference = 'store_order_' . time() . '_' . rand(100, 999);
+
+$paystack->transaction->initialize([
+    'email'     => $customerEmail,
+    'amount'    => 500000,
+    'reference' => $reference // <-- Starts with "store_"
+]);
+```
+
+PART 2: When Receiving the Webhook on Your Website
+--------------------------------------------------
+The proxy will receive the Paystack webhook, verify its HMAC signature, deduplicate it,
+and instantly POST it to your website's `webhookUrl`.
+
+Your website should receive the JSON and always return HTTP 200 OK:
+
+Node.js / Express Example:
+```javascript
+app.post('/api/paystack-webhook', express.json(), (req, res) => {
+  const event = req.body;
+
+  // Verify the event type
+  if (event.event === 'charge.success') {
+    const reference = event.data.reference;
+    const amount = event.data.amount;
+    const customerEmail = event.data.customer.email;
+
+    console.log(`Payment confirmed for reference: ${reference}`);
+    // Update order status in your website database here!
+  }
+
+  // Always respond with 200 OK so proxy knows you received it
+  res.status(200).json({ status: 'ok' });
+});
+```
+
+PHP Example:
+```php
+<?php
+$rawBody = file_get_contents('php://input');
+$event = json_decode($rawBody, true);
+
+if ($event && $event['event'] === 'charge.success') {
+    $reference = $event['data']['reference'];
+    $amount = $event['data']['amount'];
+    // Update order status in your website database here!
+}
+
+http_response_code(200);
+echo json_encode(['status' => 'ok']);
+?>
+```
+
+
+--------------------------------------------------------------------------------
+PHASE 7: TESTING & VERIFICATION (HOW TO CONFIRM IT WORKS)
+--------------------------------------------------------------------------------
+
+Follow these 4 checks to be 100% sure everything is working:
+
+CHECK 1: Test Server Health
+---------------------------
+Open in your browser:
+https://paystack-proxy-yourname.vercel.app/health
+
+You should see:
+{"status":"healthy","uptime":...}
+If you see this, your Vercel deployment is running!
+
+CHECK 2: Test Admin Login
+-------------------------
+Open in your browser:
+https://paystack-proxy-yourname.vercel.app
+Log in with your `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD`.
+You should see the dashboard with metrics, live event logs, and registered sites.
+
+CHECK 3: Send a Simulated Webhook
+---------------------------------
+1. In your Proxy Dashboard, click on "Simulator" (or "Test Webhook").
+2. Select your site (e.g. `store`).
+3. Click "Send Test Webhook".
+4. Check the "Recent Events" feed — you will see the event appear with:
+   - Green badge: DELIVERED (200)
+   - Matched site: store
+   - Latency in milliseconds
+
+CHECK 4: Complete a Real Test Payment
+-------------------------------------
+1. Go to your child website checkout.
+2. Initialize a payment.
+3. Pay using Paystack's test card (Number: 4084 0840 8408 4084, CVV: 408, Exp: 12/28).
+4. Watch Paystack redirect your browser to the proxy callback, which instantly redirects
+   you to your website's `callbackUrl` with `?reference=store_...&status=success`.
+5. Check your proxy dashboard — the real `charge.success` event will be logged and
+   delivered to your website webhook!
+
+
+--------------------------------------------------------------------------------
+PHASE 8: TROUBLESHOOTING COMMON BEGINNER ERRORS
+--------------------------------------------------------------------------------
+
+ERROR 1: "401 Unauthorized" or "Invalid Paystack Signature"
+-> Cause: The `PAYSTACK_SECRET_KEY` in Vercel does not match your Paystack dashboard.
+-> Fix: In Vercel, go to Settings -> Environment Variables, update `PAYSTACK_SECRET_KEY`
+   and `PAYSTACK_WEBHOOK_SECRET` to your exact secret key from Paystack, then redeploy.
+
+ERROR 2: Events are routed to "fallback" instead of your site
+-> Cause: The payment reference does not start with your site key.
+-> Fix: Make sure your website creates references like `store_order_123` where `store`
+   is listed under `referencePrefixes` in your site configuration.
+
+ERROR 3: "Invalid username or password" when logging into the Dashboard
+-> Cause: The credentials you typed don't match `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`.
+-> Fix: Check the Environment Variables you added in Vercel. Ensure there are no
+   accidental spaces before or after the password.
+
+ERROR 4: Child site webhook returns "500" or times out
+-> Cause: Your child site crashed or took longer than 8 seconds to respond.
+-> Fix: Make sure your child site webhook handler returns `res.status(200).send()`
+   immediately before doing very slow tasks like sending confirmation emails.
+
+================================================================================
+                                END OF GUIDE
+================================================================================

@@ -188,6 +188,7 @@ export function updateConfigAndEnv(updates = {}) {
     if (updates.proxy.queueStore !== undefined) processField('QUEUE_STORAGE_TYPE', updates.proxy.queueStore);
     if (updates.proxy.sqliteDbPath !== undefined) processField('SQLITE_DB_PATH', updates.proxy.sqliteDbPath);
     if (updates.proxy.redisUrl !== undefined) processField('REDIS_URL', updates.proxy.redisUrl);
+    if (updates.proxy.databaseUrl !== undefined) processField('DATABASE_URL', updates.proxy.databaseUrl);
     if (updates.proxy.idempotencyTtlSeconds !== undefined) processField('IDEMPOTENCY_TTL_SECONDS', updates.proxy.idempotencyTtlSeconds);
   }
   if (updates.notifications) {
@@ -232,6 +233,8 @@ export function updateConfigAndEnv(updates = {}) {
     queueStore: 'QUEUE_STORAGE_TYPE',
     sqliteDbPath: 'SQLITE_DB_PATH',
     redisUrl: 'REDIS_URL',
+    databaseUrl: 'DATABASE_URL',
+    postgresUrl: 'POSTGRES_URL',
     idempotencyTtlSeconds: 'IDEMPOTENCY_TTL_SECONDS',
     discordWebhookUrl: 'DISCORD_WEBHOOK_URL',
     telegramBotToken: 'TELEGRAM_BOT_TOKEN',
@@ -309,6 +312,10 @@ export function updateConfigAndEnv(updates = {}) {
         break;
       case 'REDIS_URL':
         config.proxy.redisUrl = val;
+        break;
+      case 'DATABASE_URL':
+      case 'POSTGRES_URL':
+        config.proxy.databaseUrl = val;
         break;
       case 'IDEMPOTENCY_TTL_SECONDS':
         config.proxy.idempotencyTtlSeconds = parseInt(val, 10) || 86400;

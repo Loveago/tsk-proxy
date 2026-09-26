@@ -9,6 +9,7 @@ try {
   // node:sqlite is available in Node.js >= 22.5.0; handled gracefully below for Node 18/20 LTS
 }
 import Redis from 'ioredis';
+import pg from 'pg';
 import { config, logger, resolveConfigFilePath, onConfigUpdated } from '../config/index.js';
 import { notifier } from './notifier.js';
 
@@ -252,6 +253,251 @@ class RedisIdempotencyStore {
   }
 }
 
+export class PostgresIdempotencyStore {
+  constructor(databaseUrl, ttlSeconds = 86400) {
+    this.ttlSeconds = ttlSeconds;
+    this.databaseUrl = databaseUrl || '';
+    this.memoryFallback = new MemoryIdempotencyStore(ttlSeconds * 1000);
+    this.dbUnavailable = !this.databaseUrl;
+    this.tableInitialized = false;
+
+    if (this.databaseUrl) {
+      const isLocal =
+        this.databaseUrl.includes('localhost') ||
+        this.databaseUrl.includes('127.0.0.1') ||
+        this.databaseUrl.includes('host.docker.internal');
+
+      this.pool = new pg.Pool({
+        connectionString: this.databaseUrl,
+        ssl: isLocal ? false : { rejectUnauthorized: false },
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 2000,
+      });
+
+      this.pool.on('error', (err) => {
+        logger.warn({ err: err.message }, 'Unexpected error on idle PostgreSQL client');
+      });
+    }
+  }
+
+  async ensureTable() {
+    if (this.tableInitialized) return true;
+    if (this.dbUnavailable || !this.pool) return false;
+    try {
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS idempotency (
+          event_key VARCHAR(255) PRIMARY KEY,
+          status VARCHAR(50) NOT NULL,
+          expires_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency(expires_at);
+
+        CREATE TABLE IF NOT EXISTS event_logs (
+          id VARCHAR(64) PRIMARY KEY,
+          event_key VARCHAR(255) NOT NULL,
+          event_type VARCHAR(100) NOT NULL,
+          reference VARCHAR(255),
+          site_key VARCHAR(100),
+          target_url TEXT,
+          status VARCHAR(50) NOT NULL,
+          attempts INTEGER DEFAULT 0,
+          max_retries INTEGER DEFAULT 0,
+          correlation_id VARCHAR(64),
+          error TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_event_logs_created ON event_logs(created_at DESC);
+      `);
+      this.tableInitialized = true;
+      return true;
+    } catch (err) {
+      this.dbUnavailable = true;
+      logger.warn({ err: err.message }, 'PostgreSQL connection failed; falling back to in-memory idempotency');
+      return false;
+    }
+  }
+
+  async isDuplicate(eventKey) {
+    const ready = await this.ensureTable();
+    if (!ready || this.dbUnavailable) {
+      return this.memoryFallback.isDuplicate(eventKey);
+    }
+    const now = Date.now();
+    try {
+      const res = await this.pool.query(
+        'SELECT status, expires_at FROM idempotency WHERE event_key = $1',
+        [eventKey]
+      );
+      if (res.rows.length === 0) return false;
+      const row = res.rows[0];
+      if (now > Number(row.expires_at)) {
+        await this.pool.query('DELETE FROM idempotency WHERE event_key = $1', [eventKey]);
+        return false;
+      }
+      return row.status === 'SUCCESS' || row.status === 'PROCESSING' || row.status === 'QUEUED';
+    } catch (err) {
+      this.dbUnavailable = true;
+      logger.warn({ err: err.message, eventKey }, 'Postgres isDuplicate check failed; falling back to memory');
+      return this.memoryFallback.isDuplicate(eventKey);
+    }
+  }
+
+  async checkAndRecord(eventKey, status = 'QUEUED', ttlMs = this.ttlSeconds * 1000) {
+    const ready = await this.ensureTable();
+    if (!ready || this.dbUnavailable) {
+      return this.memoryFallback.checkAndRecord(eventKey, status, ttlMs);
+    }
+    const now = Date.now();
+    try {
+      const res = await this.pool.query(
+        'SELECT status, expires_at FROM idempotency WHERE event_key = $1',
+        [eventKey]
+      );
+      if (res.rows.length > 0) {
+        const row = res.rows[0];
+        if (now <= Number(row.expires_at)) {
+          const isDup = row.status === 'SUCCESS' || row.status === 'PROCESSING' || row.status === 'QUEUED';
+          if (isDup) {
+            return { isDuplicate: true, status: row.status };
+          }
+        }
+      }
+      await this.record(eventKey, status, ttlMs);
+      return { isDuplicate: false, status };
+    } catch (err) {
+      this.dbUnavailable = true;
+      logger.warn({ err: err.message, eventKey }, 'Postgres checkAndRecord failed; falling back to memory');
+      return this.memoryFallback.checkAndRecord(eventKey, status, ttlMs);
+    }
+  }
+
+  async record(eventKey, status = 'QUEUED', ttlMs = this.ttlSeconds * 1000) {
+    await this.memoryFallback.record(eventKey, status, ttlMs).catch(() => {});
+    const ready = await this.ensureTable();
+    if (!ready || this.dbUnavailable) return;
+    const now = Date.now();
+    const expiresAt = now + ttlMs;
+    try {
+      await this.pool.query(
+        `INSERT INTO idempotency (event_key, status, expires_at, updated_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (event_key) DO UPDATE SET
+           status = EXCLUDED.status,
+           expires_at = EXCLUDED.expires_at,
+           updated_at = EXCLUDED.updated_at`,
+        [eventKey, status, expiresAt, now]
+      );
+    } catch (err) {
+      this.dbUnavailable = true;
+      logger.warn({ err: err.message, eventKey }, 'Postgres idempotency record failed');
+    }
+  }
+
+  async updateStatus(eventKey, status) {
+    await this.memoryFallback.updateStatus(eventKey, status).catch(() => {});
+    const ready = await this.ensureTable();
+    if (!ready || this.dbUnavailable) return;
+    const now = Date.now();
+    try {
+      await this.pool.query(
+        'UPDATE idempotency SET status = $1, updated_at = $2 WHERE event_key = $3',
+        [status, now, eventKey]
+      );
+    } catch (err) {
+      this.dbUnavailable = true;
+      logger.warn({ err: err.message, eventKey }, 'Postgres updateStatus failed');
+    }
+  }
+
+  async recordEventLog(entry) {
+    const ready = await this.ensureTable();
+    if (!ready || this.dbUnavailable) return;
+    try {
+      await this.pool.query(
+        `INSERT INTO event_logs (id, event_key, event_type, reference, site_key, target_url, status, attempts, max_retries, correlation_id, error, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status,
+           attempts = EXCLUDED.attempts,
+           error = EXCLUDED.error,
+           updated_at = EXCLUDED.updated_at`,
+        [
+          entry.id,
+          entry.eventKey,
+          entry.eventType,
+          entry.reference || null,
+          entry.siteKey || null,
+          entry.targetUrl || null,
+          entry.status,
+          entry.attempts || 0,
+          entry.maxRetries || 0,
+          entry.correlationId || null,
+          entry.error || null,
+          entry.createdAt || new Date().toISOString(),
+          entry.updatedAt || new Date().toISOString(),
+        ]
+      );
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Postgres recordEventLog failed');
+    }
+  }
+
+  async getRecentEvents(limit = 50) {
+    const ready = await this.ensureTable();
+    if (!ready || this.dbUnavailable) return [];
+    try {
+      const res = await this.pool.query(
+        'SELECT * FROM event_logs ORDER BY created_at DESC LIMIT $1',
+        [limit]
+      );
+      return res.rows.map(r => ({
+        id: r.id,
+        eventKey: r.event_key,
+        eventType: r.event_type,
+        reference: r.reference,
+        siteKey: r.site_key,
+        targetUrl: r.target_url,
+        status: r.status,
+        attempts: r.attempts,
+        maxRetries: r.max_retries,
+        correlationId: r.correlation_id,
+        error: r.error,
+        timestamp: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+        updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
+      }));
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Postgres getRecentEvents failed');
+      return [];
+    }
+  }
+
+  async clear() {
+    await this.memoryFallback.clear();
+    if (this.dbUnavailable || !this.pool) return;
+    try {
+      await this.pool.query('DELETE FROM idempotency');
+      await this.pool.query('DELETE FROM event_logs');
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  async close() {
+    await this.memoryFallback.close();
+    if (this.pool) {
+      try {
+        await this.pool.end();
+      } catch (err) {
+        // ignore
+      }
+    }
+  }
+}
+
 // -------------------------------------------------------------
 // Dispatch Queue & Retry Worker
 // -------------------------------------------------------------
@@ -263,6 +509,7 @@ export class QueueService {
     this._customMaxRetries = options.maxRetries;
     this._customSqliteDbPath = options.sqliteDbPath;
     this._customRedisUrl = options.redisUrl;
+    this._customDatabaseUrl = options.databaseUrl;
     this.pollIntervalMs = options.pollIntervalMs || 1000;
 
     this.jobs = []; // In-memory queue storage
@@ -315,6 +562,14 @@ export class QueueService {
     this._customRedisUrl = val;
   }
 
+  get databaseUrl() {
+    return this._customDatabaseUrl ?? config.proxy.databaseUrl ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? '';
+  }
+
+  set databaseUrl(val) {
+    this._customDatabaseUrl = val;
+  }
+
   async reconfigure() {
     if (this.idempotencyStore && typeof this.idempotencyStore.close === 'function') {
       try {
@@ -328,7 +583,17 @@ export class QueueService {
 
   initStore() {
     const ttlMs = (config.proxy.idempotencyTtlSeconds || 86400) * 1000;
-    if (this.storeType === 'redis') {
+    const store = String(this.storeType).toLowerCase().trim();
+
+    if (store === 'postgres' || store === 'postgresql' || (store !== 'memory' && store !== 'sqlite' && store !== 'redis' && this.databaseUrl)) {
+      try {
+        this.idempotencyStore = new PostgresIdempotencyStore(this.databaseUrl, config.proxy.idempotencyTtlSeconds);
+        logger.info('Using PostgreSQL idempotency & event store');
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Failed to initialize PostgreSQL store, falling back to Memory');
+        this.idempotencyStore = new MemoryIdempotencyStore(ttlMs);
+      }
+    } else if (store === 'redis') {
       try {
         this.idempotencyStore = new RedisIdempotencyStore(this.redisUrl, config.proxy.idempotencyTtlSeconds);
         logger.info('Using Redis idempotency store');
@@ -336,7 +601,7 @@ export class QueueService {
         logger.warn({ err: err.message }, 'Failed to initialize Redis store, falling back to Memory');
         this.idempotencyStore = new MemoryIdempotencyStore(ttlMs);
       }
-    } else if (this.storeType === 'sqlite') {
+    } else if (store === 'sqlite') {
       try {
         this.idempotencyStore = new SqliteIdempotencyStore(this.sqliteDbPath);
         logger.info({ path: this.sqliteDbPath }, 'Using SQLite idempotency store');
@@ -393,12 +658,23 @@ export class QueueService {
     if (this.recentEvents.length > this.maxRecentEvents) {
       this.recentEvents.pop();
     }
+
+    if (this.idempotencyStore && typeof this.idempotencyStore.recordEventLog === 'function') {
+      this.idempotencyStore.recordEventLog(entry).catch(err => {
+        logger.warn({ err: err.message }, 'Failed to persist event log to PostgreSQL');
+      });
+    }
   }
 
   updateEventLog(id, patch) {
     const entry = this.recentEvents.find(e => e.id === id);
     if (entry) {
       Object.assign(entry, patch);
+      if (this.idempotencyStore && typeof this.idempotencyStore.recordEventLog === 'function') {
+        this.idempotencyStore.recordEventLog(entry).catch(err => {
+          logger.warn({ err: err.message }, 'Failed to update event log in PostgreSQL');
+        });
+      }
     }
   }
 
@@ -426,6 +702,18 @@ export class QueueService {
 
   getRecentEvents(limit = 50) {
     return this.recentEvents.slice(0, limit);
+  }
+
+  async fetchRecentEvents(limit = 50) {
+    if (this.idempotencyStore && typeof this.idempotencyStore.getRecentEvents === 'function') {
+      try {
+        const dbEvents = await this.idempotencyStore.getRecentEvents(limit);
+        if (dbEvents && dbEvents.length > 0) return dbEvents;
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Failed to fetch events from PostgreSQL, falling back to memory');
+      }
+    }
+    return this.getRecentEvents(limit);
   }
 
   /**

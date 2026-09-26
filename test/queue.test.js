@@ -150,4 +150,20 @@ describe('Queue Service & Retry Mechanism', () => {
     assert.equal(executionOrder[0], 'fast_done');
     assert.equal(executionOrder[1], 'slow_done');
   });
+
+  it('supports PostgreSQL storage initialization and graceful error handling', async () => {
+    const pgQueue = new QueueService({
+      queueStore: 'postgres',
+      databaseUrl: 'postgres://mock_user:mock_pass@127.0.0.1:5432/mock_db',
+    });
+
+    assert.equal(pgQueue.storeType, 'postgres');
+    assert.ok(pgQueue.idempotencyStore);
+
+    // If PostgreSQL server is not locally running, it gracefully allows checkAndRecord without throwing
+    const res = await pgQueue.checkAndRecord('charge.success:pg_test_1', 'QUEUED');
+    assert.equal(typeof res.isDuplicate, 'boolean');
+
+    await pgQueue.close();
+  });
 });

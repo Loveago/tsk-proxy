@@ -26,6 +26,7 @@ export default {
     queueStore: process.env.QUEUE_STORAGE_TYPE || 'memory',
     sqliteDbPath: process.env.SQLITE_DB_PATH || './data/proxy.db',
     redisUrl: process.env.REDIS_URL || 'redis://127.0.0.1:6379/0',
+    databaseUrl: process.env.DATABASE_URL || process.env.POSTGRES_URL || '',
     idempotencyTtlSeconds: parseInt(process.env.IDEMPOTENCY_TTL_SECONDS || '86400', 10),
   },
 

@@ -562,9 +562,11 @@ router.post('/sites/:key/ping', async (req, res) => {
  * GET /api/v1/dashboard/events
  * Recent webhook event dispatch log
  */
-router.get('/events', (req, res) => {
+router.get('/events', async (req, res) => {
   const limit = req.query.limit ? Math.min(parseInt(req.query.limit, 10) || 50, 100) : 50;
-  const events = queueService.getRecentEvents(limit);
+  const events = typeof queueService.fetchRecentEvents === 'function'
+    ? await queueService.fetchRecentEvents(limit)
+    : queueService.getRecentEvents(limit);
 
   res.json({
     status: true,
