@@ -2,23 +2,15 @@
   "version": 2,
   "installCommand": "npm install && npm --prefix frontend install",
   "buildCommand": "npm run build",
-  "outputDirectory": "frontend/out",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "{frontend/out/**,public/**,config/**}"
+    }
+  },
   "rewrites": [
     {
-      "source": "/api/(.*)",
+      "source": "/(.*)",
       "destination": "/api/index.js"
-    },
-    {
-      "source": "/health",
-      "destination": "/api/index.js"
-    },
-    {
-      "source": "/metrics",
-      "destination": "/api/index.js"
-    },
-    {
-      "source": "/dashboard",
-      "destination": "/index.html"
     }
   ]
 }

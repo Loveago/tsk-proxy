@@ -78,8 +78,8 @@ On the "Configure Project" screen:
 1. "Project Name": You can keep the default or name it `paystack-proxy`.
 2. "Framework Preset": Leave it as "Other" (or "Next.js").
 3. "Root Directory": Leave as `./` (do not change).
-4. "Build and Output Settings": Leave as default because our `vercel.json` file
-   automatically instructs Vercel to run `npm run build` and output `frontend/out`.
+4. "Build and Output Settings": Leave as default (do NOT override Output Directory
+   in Vercel's UI; our `vercel.json` and Express server handle everything automatically).
 
 
 STEP 3.4: Set Your Environment Variables (CRITICAL!)
