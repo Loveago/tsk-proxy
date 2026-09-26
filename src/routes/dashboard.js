@@ -610,6 +610,13 @@ router.get('/events', async (req, res) => {
  * enqueues for dispatch, and returns comprehensive resolution feedback.
  */
 router.post('/simulate', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb();
+  }
+  if (typeof syncConfigWithDb === 'function') {
+    await syncConfigWithDb();
+  }
+
   const correlationId = `sim-${crypto.randomUUID().slice(0, 8)}`;
   const {
     eventType = 'charge.success',
@@ -650,7 +657,8 @@ router.post('/simulate', async (req, res) => {
       const uniqueSuffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       if ((routingMechanism === 'reference' || routingMechanism === 'both') && siteKey) {
         const targetSite = getSite(siteKey);
-        const prefix = (targetSite?.referencePrefixes && targetSite.referencePrefixes[0]) || siteKey;
+        const prefixes = normalizePrefixes(targetSite?.referencePrefixes);
+        const prefix = prefixes[0] || siteKey;
         ref = `${prefix}_sim_${uniqueSuffix}`;
       } else {
         ref = `sim_txn_${uniqueSuffix}`;
@@ -796,6 +804,10 @@ router.post('/simulate', async (req, res) => {
  * Transaction verification lookup tool (inspect Paystack transactions by reference)
  */
 router.get('/verify/:reference', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb();
+  }
+
   const { reference } = req.params;
   const cleanRef = String(reference || '').trim();
 

@@ -126,7 +126,8 @@ export async function syncSitesWithDb(force = false) {
     if (res.rows.length > 0) {
       const dbSites = {};
       for (const row of res.rows) {
-        dbSites[row.site_key] = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+        const cleanKey = String(row.site_key).toLowerCase().trim();
+        dbSites[cleanKey] = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
       }
       sitesCache = dbSites;
     } else {

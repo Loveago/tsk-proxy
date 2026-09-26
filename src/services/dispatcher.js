@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import axios from 'axios';
-import { config, getSite, getAllSites, logger } from '../config/index.js';
+import { config, getSite, getAllSites, logger, syncSitesWithDb } from '../config/index.js';
 import { queueService, metrics } from './queue.js';
 import { notifier } from './notifier.js';
 
@@ -441,6 +441,10 @@ queueService.setForwarder(forwardWebhookDownstream);
  * @returns {Promise<{queued: boolean, unroutable: boolean, siteKey?: string, targetUrl?: string, matchType?: string}>}
  */
 export async function dispatchWebhook({ eventKey, payload, rawBody, headers, correlationId }) {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb();
+  }
+
   const resolution = resolveSite(payload);
 
   if (!resolution || !resolution.site.webhookUrl) {
