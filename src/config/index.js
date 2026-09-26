@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pino from 'pino';
+import pg from 'pg';
 import defaultConfig from '../../config/default.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -76,66 +77,188 @@ export function setSitesForTesting(customSites) {
   sitesCache = { ...customSites };
 }
 
-export function saveSites(newSites) {
-  const fullPath = resolveConfigFilePath(config.sitesConfigPath);
-  const dir = path.dirname(fullPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+let sitesPgPool = null;
+
+function getSitesPgPool() {
+  const dbUrl = config.proxy?.databaseUrl || process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  if (!dbUrl) return null;
+  if (!sitesPgPool) {
+    const isLocal =
+      dbUrl.includes('localhost') ||
+      dbUrl.includes('127.0.0.1') ||
+      dbUrl.includes('host.docker.internal');
+    sitesPgPool = new pg.Pool({
+      connectionString: dbUrl,
+      ssl: isLocal ? false : { rejectUnauthorized: false },
+      max: 5,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 3000,
+    });
+    sitesPgPool.on('error', (err) => {
+      logger.warn({ err: err.message }, 'PostgreSQL child sites pool warning');
+    });
   }
-  let parsed = { sites: {} };
-  if (fs.existsSync(fullPath)) {
-    try {
-      parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-    } catch {
-      parsed = { sites: {} };
-    }
-  }
-  parsed.sites = { ...newSites };
-  fs.writeFileSync(fullPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
-  return reloadSites();
+  return sitesPgPool;
 }
 
-export function addOrUpdateSite(key, siteData) {
-  const fullPath = resolveConfigFilePath(config.sitesConfigPath);
-  const dir = path.dirname(fullPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  let parsed = { sites: {} };
-  if (fs.existsSync(fullPath)) {
-    try {
-      parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-    } catch {
-      parsed = { sites: {} };
+export async function syncSitesWithDb() {
+  const pool = getSitesPgPool();
+  if (!pool) return sitesCache;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS child_sites (
+        site_key VARCHAR(100) PRIMARY KEY,
+        data JSONB NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    const res = await pool.query('SELECT site_key, data FROM child_sites');
+    if (res.rows.length > 0) {
+      const dbSites = {};
+      for (const row of res.rows) {
+        dbSites[row.site_key] = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      }
+      sitesCache = dbSites;
+    } else {
+      // First run: seed child_sites from initial sites.json
+      for (const [key, data] of Object.entries(sitesCache)) {
+        await pool.query(
+          `INSERT INTO child_sites (site_key, data, updated_at) VALUES ($1, $2, NOW())
+           ON CONFLICT (site_key) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+          [key, JSON.stringify(data)]
+        );
+      }
     }
+  } catch (err) {
+    logger.warn({ err: err.message }, 'PostgreSQL child_sites sync warning; falling back to memory/file');
   }
-  if (!parsed.sites) parsed.sites = {};
-  const normalizedKey = String(key).toLowerCase().trim();
-  parsed.sites[normalizedKey] = siteData;
-  fs.writeFileSync(fullPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
-  return reloadSites();
+  return sitesCache;
 }
 
-export function removeSite(key) {
-  const fullPath = resolveConfigFilePath(config.sitesConfigPath);
-  const dir = path.dirname(fullPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  let parsed = { sites: {} };
-  if (fs.existsSync(fullPath)) {
-    try {
-      parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-    } catch {
-      parsed = { sites: {} };
+// Perform initial background sync if DB is configured
+syncSitesWithDb().catch(() => {});
+
+export async function saveSites(newSites) {
+  sitesCache = { ...newSites };
+
+  try {
+    const fullPath = resolveConfigFilePath(config.sitesConfigPath);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
-  }
-  const normalizedKey = String(key).toLowerCase().trim();
-  if (parsed.sites && parsed.sites[normalizedKey]) {
-    delete parsed.sites[normalizedKey];
+    let parsed = { sites: {} };
+    if (fs.existsSync(fullPath)) {
+      try {
+        parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+      } catch {
+        parsed = { sites: {} };
+      }
+    }
+    parsed.sites = { ...newSites };
     fs.writeFileSync(fullPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Filesystem is read-only (Vercel); updated sites in-memory and database');
   }
-  return reloadSites();
+
+  const pool = getSitesPgPool();
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM child_sites');
+      for (const [key, data] of Object.entries(newSites)) {
+        await pool.query(
+          `INSERT INTO child_sites (site_key, data, updated_at) VALUES ($1, $2, NOW())`,
+          [key, JSON.stringify(data)]
+        );
+      }
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Failed to persist all child sites to PostgreSQL');
+    }
+  }
+
+  return sitesCache;
+}
+
+export async function addOrUpdateSite(key, siteData) {
+  const normalizedKey = String(key).toLowerCase().trim();
+  sitesCache[normalizedKey] = siteData;
+
+  try {
+    const fullPath = resolveConfigFilePath(config.sitesConfigPath);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    let parsed = { sites: {} };
+    if (fs.existsSync(fullPath)) {
+      try {
+        parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+      } catch {
+        parsed = { sites: {} };
+      }
+    }
+    if (!parsed.sites) parsed.sites = {};
+    parsed.sites[normalizedKey] = siteData;
+    fs.writeFileSync(fullPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+  } catch (err) {
+    logger.warn({ err: err.message, siteKey: normalizedKey }, 'Filesystem is read-only (Vercel); saved site in-memory and database');
+  }
+
+  const pool = getSitesPgPool();
+  if (pool) {
+    try {
+      await pool.query(
+        `INSERT INTO child_sites (site_key, data, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (site_key) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+        [normalizedKey, JSON.stringify(siteData)]
+      );
+    } catch (err) {
+      logger.warn({ err: err.message, siteKey: normalizedKey }, 'Failed to persist child site to PostgreSQL');
+    }
+  }
+
+  return sitesCache;
+}
+
+export async function removeSite(key) {
+  const normalizedKey = String(key).toLowerCase().trim();
+  if (sitesCache[normalizedKey]) {
+    delete sitesCache[normalizedKey];
+  }
+
+  try {
+    const fullPath = resolveConfigFilePath(config.sitesConfigPath);
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    let parsed = { sites: {} };
+    if (fs.existsSync(fullPath)) {
+      try {
+        parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+      } catch {
+        parsed = { sites: {} };
+      }
+    }
+    if (parsed.sites && parsed.sites[normalizedKey]) {
+      delete parsed.sites[normalizedKey];
+      fs.writeFileSync(fullPath, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+    }
+  } catch (err) {
+    logger.warn({ err: err.message, siteKey: normalizedKey }, 'Filesystem is read-only (Vercel); removed site from memory and database');
+  }
+
+  const pool = getSitesPgPool();
+  if (pool) {
+    try {
+      await pool.query('DELETE FROM child_sites WHERE site_key = $1', [normalizedKey]);
+    } catch (err) {
+      logger.warn({ err: err.message, siteKey: normalizedKey }, 'Failed to delete child site from PostgreSQL');
+    }
+  }
+
+  return sitesCache;
 }
 
 const configUpdateListeners = [];
@@ -415,6 +538,7 @@ export default {
   saveSites,
   addOrUpdateSite,
   removeSite,
+  syncSitesWithDb,
   updateConfigAndEnv,
   onConfigUpdated,
   setSitesForTesting,

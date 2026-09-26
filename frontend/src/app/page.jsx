@@ -36,6 +36,7 @@ import {
   LogOut,
   User,
   Key,
+  ArrowUpRight,
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -56,6 +57,17 @@ export default function Dashboard() {
   // Stats & Health
   const [stats, setStats] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // Auto-detected domain for Paystack configuration
+  const [currentOrigin, setCurrentOrigin] = useState('');
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setCurrentOrigin(window.location.origin);
+    }
+  }, []);
+
+  const paystackWebhookUrl = currentOrigin ? `${currentOrigin}/api/v1/paystack/webhook` : '/api/v1/paystack/webhook';
+  const paystackCallbackUrl = currentOrigin ? `${currentOrigin}/api/v1/paystack/callback` : '/api/v1/paystack/callback';
 
   // Events Log
   const [events, setEvents] = useState([]);
@@ -979,6 +991,111 @@ export default function Dashboard() {
             {/* ========================================================================= */}
             {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* Paystack Integration Endpoints Card (Auto-Detected Domain) */}
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900/90 via-cyan-950/20 to-slate-900/90 border border-cyan-500/30 shadow-lg">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    <Globe className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
+                      Paystack Integration Endpoints
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-700/60 text-cyan-300 font-mono font-normal">
+                        Active Domain: {currentOrigin || 'Auto-Detecting...'}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Copy and paste these two URLs into your{' '}
+                      <a
+                        href="https://dashboard.paystack.com/#/settings/developer"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-cyan-400 hover:underline inline-flex items-center gap-0.5 font-medium"
+                      >
+                        Paystack Dashboard (Settings &rarr; API Keys & Webhooks)
+                        <ExternalLink className="w-3 h-3 ml-0.5" />
+                      </a>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Webhook URL */}
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-cyan-400" /> Paystack Webhook URL
+                      </span>
+                      <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 border border-cyan-800/60 px-1.5 py-0.5 rounded font-bold">
+                        POST
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mb-2">
+                      Where Paystack sends transaction events (e.g. <code className="text-slate-300">charge.success</code>).
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-800">
+                    <input
+                      type="text"
+                      readOnly
+                      value={paystackWebhookUrl}
+                      className="bg-transparent text-xs font-mono text-cyan-300 w-full outline-none select-all"
+                    />
+                    <button
+                      onClick={() => copyToClipboard(paystackWebhookUrl, 'Paystack Webhook URL')}
+                      className="px-2.5 py-1 rounded bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 text-xs font-medium flex items-center gap-1 transition-all whitespace-nowrap"
+                    >
+                      <Copy className="w-3 h-3" /> Copy
+                    </button>
+                  </div>
+                </div>
+
+                {/* Callback URL */}
+                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" /> Paystack Callback URL
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 border border-emerald-800/60 px-1.5 py-0.5 rounded font-bold">
+                        GET
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mb-2">
+                      Where customer browsers are redirected after checkout to reach their child site.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-lg border border-slate-800">
+                    <input
+                      type="text"
+                      readOnly
+                      value={paystackCallbackUrl}
+                      className="bg-transparent text-xs font-mono text-emerald-300 w-full outline-none select-all"
+                    />
+                    <button
+                      onClick={() => copyToClipboard(paystackCallbackUrl, 'Paystack Callback URL')}
+                      className="px-2.5 py-1 rounded bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 text-xs font-medium flex items-center gap-1 transition-all whitespace-nowrap"
+                    >
+                      <Copy className="w-3 h-3" /> Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informational Webhook Secret Callout */}
+              <div className="mt-3.5 pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-slate-400">
+                <div className="flex items-start sm:items-center gap-2">
+                  <Key className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5 sm:mt-0" />
+                  <span>
+                    <strong className="text-slate-200">Where is the Webhook Secret?</strong> Paystack signs all webhooks using your <strong className="text-cyan-300">Paystack Secret Key</strong> (<code className="text-slate-300">sk_live_...</code> or <code className="text-slate-300">sk_test_...</code>). Paystack does not have a separate webhook secret.
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {/* Top Stat Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4">
               <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 shadow-sm hover:border-cyan-500/40 transition-colors">
@@ -1478,6 +1595,37 @@ export default function Dashboard() {
               >
                 <Plus className="w-4 h-4" /> Add Child Site
               </button>
+            </div>
+
+            {/* Paystack URLs Quick Reference Banner */}
+            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-2 text-slate-300">
+                <Globe className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                <span>
+                  <strong>Paystack Webhook URL:</strong> <code className="text-cyan-300 bg-slate-950 px-2 py-0.5 rounded font-mono select-all">{paystackWebhookUrl}</code>
+                </span>
+                <button
+                  onClick={() => copyToClipboard(paystackWebhookUrl, 'Paystack Webhook URL')}
+                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-cyan-300 transition-colors"
+                  title="Copy Webhook URL"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 text-slate-300">
+                <ArrowUpRight className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>
+                  <strong>Paystack Callback URL:</strong> <code className="text-emerald-300 bg-slate-950 px-2 py-0.5 rounded font-mono select-all">{paystackCallbackUrl}</code>
+                </span>
+                <button
+                  onClick={() => copyToClipboard(paystackCallbackUrl, 'Paystack Callback URL')}
+                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-emerald-300 transition-colors"
+                  title="Copy Callback URL"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
             {/* Sites Grid */}

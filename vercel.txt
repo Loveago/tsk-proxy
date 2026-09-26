@@ -219,20 +219,43 @@ PHASE 5: POINTING PAYSTACK TO YOUR PROXY
 
 Now connect your Paystack account to your new Vercel proxy:
 
-1. Log into your Paystack Dashboard:
+1. Automatic URL Detection in Your Proxy Dashboard:
+   - When you open your live proxy URL in your browser, the dashboard automatically
+     detects your active domain name!
+   - On the "Overview" and "Sites" tabs, you will see a banner with your exact
+     live Webhook URL and Callback URL, complete with one-click "Copy" buttons!
+
+2. Log into your Paystack Dashboard:
    https://dashboard.paystack.com/#/settings/developer
-2. Click on the "API Keys & Webhooks" tab.
-3. Under "Configuration":
+3. Click on the "API Keys & Webhooks" tab.
+4. Under "Configuration":
    - Find "Webhook URL" and paste:
-     https://paystack-proxy-yourname.vercel.app/api/v1/paystack/webhook
+     https://your-domain.vercel.app/api/v1/paystack/webhook
      
    - Find "Callback URL" and paste:
-     https://paystack-proxy-yourname.vercel.app/api/v1/paystack/callback
+     https://your-domain.vercel.app/api/v1/paystack/callback
 
-4. Click "Save Changes".
+5. Click "Save Changes".
 
-NOTE: You can do this in "Test Mode" first while testing, and then copy the
-exact same URLs to "Live Mode" when you are ready to go live!
+--------------------------------------------------------------------------------
+COMMON QUESTION: "Where do I get the Paystack Webhook Secret? Do I generate it?"
+--------------------------------------------------------------------------------
+ANSWER: NO, you DO NOT generate a webhook secret yourself!
+
+In Paystack's security architecture:
+  - Paystack signs every incoming webhook with HMAC SHA512 using your
+    PAYSTACK SECRET KEY (`sk_live_...` or `sk_test_...`).
+  - There is no separate "webhook secret" field in Paystack.
+  - Simply copy your Secret Key from Paystack Dashboard -> Settings -> API Keys,
+    and set BOTH:
+      PAYSTACK_SECRET_KEY = sk_live_xxxx...
+      PAYSTACK_WEBHOOK_SECRET = sk_live_xxxx...
+    (They are the exact same key).
+
+* What about PROXY_SHARED_SECRET?
+  That is the ONLY secret you make up yourself. It is used strictly between
+  your proxy and your child websites (to add an `x-proxy-signature` header)
+  so your child websites know the forwarded request genuinely came from your proxy.
 
 
 --------------------------------------------------------------------------------

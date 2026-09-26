@@ -8,6 +8,7 @@ import {
   logger,
   addOrUpdateSite,
   removeSite,
+  syncSitesWithDb,
   updateConfigAndEnv,
 } from '../config/index.js';
 import { queueService, metrics } from '../services/queue.js';
@@ -300,7 +301,10 @@ function normalizeFlowRoutes(input) {
  * GET /api/v1/dashboard/sites
  * List configured child sites from sites.json
  */
-router.get('/sites', (req, res) => {
+router.get('/sites', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb();
+  }
   const sites = getAllSites();
   const list = Object.entries(sites).map(([key, site]) => ({
     key,
@@ -325,7 +329,7 @@ router.get('/sites', (req, res) => {
  * POST /api/v1/dashboard/sites
  * Add a new child site dynamically to sites.json
  */
-router.post('/sites', (req, res) => {
+router.post('/sites', async (req, res) => {
   const {
     key,
     name,
@@ -379,7 +383,7 @@ router.post('/sites', (req, res) => {
     flowRoutes: normalizeFlowRoutes(flowRoutes || callbackRules),
   };
 
-  addOrUpdateSite(cleanKey, siteData);
+  await addOrUpdateSite(cleanKey, siteData);
 
   return res.status(201).json({
     status: true,
@@ -396,7 +400,7 @@ router.post('/sites', (req, res) => {
  * PUT /api/v1/dashboard/sites/:id
  * Update an existing child site in sites.json
  */
-router.put('/sites/:id', (req, res) => {
+router.put('/sites/:id', async (req, res) => {
   const { id } = req.params;
   const siteKey = String(id || '').trim().toLowerCase();
   const existingSites = getAllSites();
@@ -453,11 +457,11 @@ router.put('/sites/:id', (req, res) => {
     if (existingSites[cleanNewKey]) {
       return res.status(409).json({ status: false, message: `Site key '${cleanNewKey}' is already taken` });
     }
-    removeSite(siteKey);
+    await removeSite(siteKey);
     targetKey = cleanNewKey;
   }
 
-  addOrUpdateSite(targetKey, updatedData);
+  await addOrUpdateSite(targetKey, updatedData);
 
   return res.json({
     status: true,
@@ -472,9 +476,9 @@ router.put('/sites/:id', (req, res) => {
 
 /**
  * DELETE /api/v1/dashboard/sites/:id
- * Remove a child site from sites.json
+ * Remove a child site from sites.json and PostgreSQL
  */
-router.delete('/sites/:id', (req, res) => {
+router.delete('/sites/:id', async (req, res) => {
   const { id } = req.params;
   const siteKey = String(id || '').trim().toLowerCase();
   const existingSites = getAllSites();
@@ -483,7 +487,7 @@ router.delete('/sites/:id', (req, res) => {
     return res.status(404).json({ status: false, message: `Site '${siteKey}' not found` });
   }
 
-  removeSite(siteKey);
+  await removeSite(siteKey);
 
   return res.json({
     status: true,
