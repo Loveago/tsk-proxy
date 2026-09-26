@@ -88,6 +88,46 @@ router.get('/auth/me', requireDashboardAuth, (req, res) => {
 // Protect all remaining dashboard routes with authentication middleware
 router.use(requireDashboardAuth);
 
+/**
+ * GET /api/v1/dashboard/debug/sites
+ * Debug endpoint: shows in-memory sitesCache AND raw PostgreSQL child_sites rows
+ */
+router.get('/debug/sites', async (req, res) => {
+  const inMemory = getAllSites();
+
+  let dbRows = null;
+  let dbError = null;
+  let hasDbUrl = Boolean(
+    config.proxy?.databaseUrl || process.env.DATABASE_URL || process.env.POSTGRES_URL
+  );
+
+  if (hasDbUrl) {
+    try {
+      await syncSitesWithDb(true); // force refresh
+      const refreshed = getAllSites();
+      dbRows = Object.keys(refreshed);
+      dbError = null;
+    } catch (err) {
+      dbError = err.message;
+    }
+  }
+
+  return res.json({
+    status: true,
+    hasDbUrl,
+    inMemorySiteKeys: Object.keys(inMemory),
+    inMemorySites: inMemory,
+    afterForceSyncSiteKeys: dbRows,
+    dbError,
+    env: {
+      DATABASE_URL_set: Boolean(process.env.DATABASE_URL),
+      POSTGRES_URL_set: Boolean(process.env.POSTGRES_URL),
+      NODE_ENV: process.env.NODE_ENV,
+      QUEUE_STORAGE_TYPE: process.env.QUEUE_STORAGE_TYPE,
+    },
+  });
+});
+
 function formatUptime(seconds) {
   const days = Math.floor(seconds / 86400);
   const hrs = Math.floor((seconds % 86400) / 3600);
