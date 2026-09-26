@@ -1,0 +1,653 @@
+================================================================================
+          PAYSTACK MULTI-SITE PROXY: DEVELOPER INTEGRATION GUIDE
+               How to Connect and Configure Your Child Site
+================================================================================
+
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. Introduction & Overview
+2. Where to Go in the Proxy Dashboard (Sites Manager)
+3. Step-by-Step: Adding Your Child Site (Field-by-Field Breakdown)
+   - Site Key (Required)
+   - Display Name (Optional)
+   - Downstream Webhook URL (Required)
+   - Default Callback Redirection URL (Optional)
+   - Reference Prefixes (Optional)
+   - Reference Regex / Glob Patterns (Optional)
+   - Dedicated Flow Callback Routes (Optional)
+   - Site Secret Key (Optional)
+4. How the Proxy Routes Events to Your Site
+   - Priority 1: Metadata Origin Tagging (Recommended)
+   - Priority 2: Smart Reference Prefix Matching
+   - Priority 3: Smart Pattern (Regex/Glob) Matching
+   - Priority 4: Delimiter Splitting
+   - Priority 5: Fallback Sink
+5. How to Initiate Paystack Transactions on Your Child Site
+   - Option A: Passing Origin via Metadata (Best Practice)
+   - Option B: Using Reference Prefixes
+   - Option C: Dynamic Redirect Paths
+6. Receiving & Verifying Webhooks on Your Backend
+   - Headers Sent by the Proxy
+   - Signature Verification (HMAC-SHA256)
+   - Code Examples (Node.js, PHP, Python)
+   - Response Expectations & Timeouts
+7. Customer Browser Callback & Redirection Flow
+   - How Browser Redirection Works
+   - Parameters Forwarded to Your Callback URL
+8. Testing Your Child Site Integration
+   - Test 1: Reachability Ping (In Dashboard)
+   - Test 2: Webhook Simulator (In Dashboard)
+   - Test 3: Transaction Verifier (In Dashboard)
+9. Error Handling, Deduplication & Retries
+10. Frequently Asked Questions (Developer FAQ)
+
+
+================================================================================
+1. INTRODUCTION & OVERVIEW
+================================================================================
+
+The Paystack Multi-Site Proxy (Dispatcher) enables multiple independent web 
+applications, stores, and backend systems to share a single Paystack merchant 
+account seamlessly.
+
+Instead of configuring your individual website URL in the Paystack Dashboard, 
+Paystack points exclusively to the central Proxy:
+- Central Webhook URL:  https://<proxy-domain>/api/v1/paystack/webhook
+- Central Callback URL: https://<proxy-domain>/api/v1/paystack/callback
+
+When an event occurs:
+1. Paystack sends the webhook or callback to the central Proxy.
+2. The Proxy authenticates Paystack, verifies signatures, and deduplicates events.
+3. The Proxy inspects transaction references and metadata to identify YOUR site.
+4. The Proxy securely forwards the webhook to your backend server or redirects 
+   your customer's browser to your specific completion page.
+
+
+================================================================================
+2. WHERE TO GO IN THE PROXY DASHBOARD (SITES MANAGER)
+================================================================================
+
+To register or edit your child site in the Proxy Dashboard:
+
+1. Open your browser and navigate to the Proxy Dashboard URL:
+   https://<proxy-domain>/
+2. Log in using the Proxy Admin password or authentication token.
+3. In the top navigation bar, locate and click the "Sites Manager" tab 
+   (or look for the Globe icon / URL path #sites).
+4. On the top right of the "Child Site Registry" panel, click the button:
+   [+ Add Child Site]
+5. A modal window will open with the configuration form. Fill in the details 
+   as outlined in Section 3 below, then click [Create Site].
+
+
+================================================================================
+3. STEP-BY-STEP: ADDING YOUR CHILD SITE (FIELD-BY-FIELD BREAKDOWN)
+================================================================================
+
+Below is a complete description of every single field found in the "Add New 
+Child Site" modal, specifying what is required, what is optional, and what each 
+field does.
+
+--------------------------------------------------------------------------------
+FIELD 1: Site Key
+--------------------------------------------------------------------------------
+- Status:      REQUIRED
+- Type:        String (alphanumeric, lowercase, no spaces or special characters)
+- Examples:    lufak, saas, academy, store, mobile_app
+- Description: 
+  This is the unique internal identifier for your child site in the proxy 
+  system. It must be unique across all registered sites.
+  The proxy uses this key to identify your application when routing requests:
+  - When passing `origin_site` or `site` in Paystack metadata.
+  - When referencing the site in internal system logs and metrics.
+  - Passed downstream to your server in the `x-target-site` HTTP header.
+  - If a transaction reference starts with `<site_key>_...`, the proxy automatically
+    routes the transaction to your site.
+
+--------------------------------------------------------------------------------
+FIELD 2: Display Name
+--------------------------------------------------------------------------------
+- Status:      OPTIONAL (defaults to Site Key if left blank)
+- Type:        String (human-readable text)
+- Examples:    Lufak E-Commerce Store, Acme Billing Portal, Digital Academy
+- Description: 
+  A friendly, human-readable name for your application. This is displayed on 
+  the dashboard cards, live event monitors, and in error alert notifications 
+  (e.g., Discord or Telegram alerts sent when a site fails to respond).
+
+--------------------------------------------------------------------------------
+FIELD 3: Downstream Webhook URL
+--------------------------------------------------------------------------------
+- Status:      REQUIRED
+- Type:        Valid HTTPS URL
+- Examples:    https://store.example.com/api/v1/paystack/webhook
+               https://app.example.com/billing/webhook
+- Description: 
+  The HTTP POST endpoint on your backend server that is built to receive 
+  Paystack webhook events.
+  Whenever Paystack fires an event intended for your application (e.g. 
+  `charge.success`, `subscription.create`), the proxy forwards the exact 
+  unmodified payload to this URL.
+  * Your endpoint MUST respond with an HTTP status code between 200 and 299 
+    within 8 seconds (8000 ms) to confirm delivery.
+  * If your server is offline or returns an error (4xx/5xx), the proxy 
+    automatically queues the event and retries up to 4 times with exponential 
+    backoff.
+
+--------------------------------------------------------------------------------
+FIELD 4: Default Callback Redirection URL
+--------------------------------------------------------------------------------
+- Status:      OPTIONAL (Recommended if your site uses Paystack popup/redirect)
+- Type:        Valid HTTPS URL
+- Examples:    https://store.example.com/checkout/complete
+               https://app.example.com/billing/verify
+- Description: 
+  Where the customer's browser should be redirected after they finish or cancel 
+  payment on Paystack's hosted checkout page.
+  When the customer finishes payment, Paystack redirects their browser to the 
+  proxy. The proxy verifies the payment status with Paystack's API and 
+  immediately issues a 302 HTTP redirect to your Default Callback Redirection 
+  URL, automatically attaching query parameters:
+  `https://store.example.com/checkout/complete?reference=ref_123&status=success&trxref=ref_123`
+  * If left empty, callback redirects for this site will fall back to the 
+    domain origin of your Webhook URL or display an error page.
+
+--------------------------------------------------------------------------------
+FIELD 5: Reference Prefixes
+--------------------------------------------------------------------------------
+- Status:      OPTIONAL (Highly recommended for prefix-based routing)
+- Type:        Comma-separated list of strings
+- Examples:    tsk_wallet, tsk_store, topup, mysite
+- Description: 
+  Prefixes that you use at the start of your Paystack transaction references.
+  If an incoming transaction reference begins with ANY of these prefixes, 
+  the proxy automatically knows it belongs to your site.
+  * Example: If you configure `tsk_store, tsk_wallet` as prefixes, any 
+    transaction reference like `tsk_store_98234` or `tsk_wallet_abc123` will be 
+    delivered to your child site.
+  * You can enter multiple prefixes separated by commas.
+  * Note: The proxy intelligently sorts prefixes across all child sites by 
+    length descending, so specific prefixes (e.g., `tsk_wallet`) take 
+    precedence over short generic ones (e.g., `tsk`).
+
+  >>> WHAT IF YOU LEAVE THIS FIELD EMPTY? <<<
+  If you do not set any Reference Prefixes, the proxy can still route to your 
+  site using any of these alternative methods:
+  1. METADATA (Recommended): Pass `"origin_site": "your_site_key"` (or `"site"`) 
+     in Paystack's transaction `metadata`. This is the #1 highest-priority 
+     routing method and works even with completely random references!
+  2. DEFAULT SITE KEY SPLIT: If your transaction reference starts with your 
+     Site Key followed by an underscore or hyphen (e.g. `yourkey_12345`), the 
+     proxy automatically recognizes your Site Key even without this field set.
+  3. REGEX / GLOB PATTERNS: Use Field 6 (`Reference Patterns`) if your references 
+     follow a specific pattern (e.g. `^order_[0-9]+$`).
+
+--------------------------------------------------------------------------------
+FIELD 6: Reference Regex / Glob Patterns
+--------------------------------------------------------------------------------
+- Status:      OPTIONAL (For advanced matching rules)
+- Type:        Comma-separated list of regular expressions or glob patterns
+- Examples:    ^tsk_(wallet|store)_.*, ^gh_.*, store-order-*
+- Description: 
+  Allows matching transaction references using advanced regular expressions 
+  or wildcard patterns.
+  * Regex format: Patterns starting with `^` or containing regex characters 
+    (e.g., `^store_[0-9]+$`, `^app_(sub|buy)_.*`).
+  * Glob format: Wildcards such as `order-*` or `sub-?-prod`.
+  * The proxy includes safety guards against catastrophic backtracking (ReDoS) 
+    and limits pattern evaluation length.
+
+--------------------------------------------------------------------------------
+FIELD 7: Dedicated Flow Callback Routes
+--------------------------------------------------------------------------------
+- Status:      OPTIONAL
+- Description: 
+  Many applications have distinct checkout workflows that need to redirect 
+  customers to different thank-you/confirmation pages based on what was purchased:
+  
+  a) Wallet Top-Up Callback URL (flow: wallet)
+     - Type: Valid HTTPS URL
+     - Example: https://store.example.com/dashboard/wallet/success
+     - Triggered when: Your transaction metadata specifies `"flow": "wallet"`, 
+       or when the transaction reference contains the keyword "wallet".
+
+  b) Storefront Checkout Callback URL (flow: checkout)
+     - Type: Valid HTTPS URL
+     - Example: https://store.example.com/store/order-complete
+     - Triggered when: Your transaction metadata specifies `"flow": "checkout"`, 
+       or when the transaction reference contains the keyword "checkout".
+
+  c) Additional Custom Flow Routes (JSON)
+     - Type: Valid JSON object mapping flow names to destination URLs
+     - Example:
+       {
+         "billing": "https://app.example.com/billing/success",
+         "course": "https://academy.example.com/courses/enrolled",
+         "donation": "https://donate.example.com/thank-you"
+       }
+     - Triggered when: Your transaction metadata specifies `"flow": "billing"`, 
+       `"flow": "course"`, etc., or matching keywords appear in the reference.
+
+--------------------------------------------------------------------------------
+FIELD 8: Site Secret Key
+--------------------------------------------------------------------------------
+- Status:      OPTIONAL (Uses system-wide proxy secret if left empty)
+- Type:        String (e.g., a 32+ character random string or custom token)
+- Examples:    my_internal_secret_key_99342
+- Description: 
+  A dedicated secret key shared between the proxy and your child site server.
+  When the proxy forwards a webhook to your Webhook URL, it calculates an 
+  HMAC-SHA256 signature of the request body using this secret key and sends it 
+  in the `x-proxy-signature` HTTP header.
+  By verifying this signature on your server, you ensure that the webhook 
+  truly came from the proxy and not from a malicious actor attempting to fake 
+  payment notifications.
+
+
+================================================================================
+4. HOW THE PROXY ROUTES EVENTS TO YOUR SITE
+================================================================================
+
+When a webhook or callback arrives at the proxy, the system evaluates the 
+following resolution hierarchy in order (first match wins):
+
+1. METADATA ORIGIN TAGGING (Highest Priority & Most Reliable)
+   The proxy checks the transaction metadata for any of the following fields:
+   - `metadata.origin_site` or `metadata.originSite`
+   - `metadata.site_id` or `metadata.siteId`
+   - `metadata.site_key` or `metadata.siteKey`
+   - `metadata.site`
+   - `metadata.custom_fields` array containing an item with variable_name 
+     "origin_site" or "site"
+   If the value matches your registered Site Key, it routes directly to you.
+
+2. SMART REFERENCE PREFIX MATCHING
+   If no metadata match is found, the proxy checks the transaction reference 
+   against all configured `Reference Prefixes` registered across child sites.
+   Prefixes are sorted from longest to shortest. If the reference starts with 
+   one of your prefixes, it routes to you.
+
+3. SMART PATTERN (REGEX / GLOB) MATCHING
+   The proxy evaluates configured `Reference Patterns` against the reference. 
+   If a match is found, it routes to that site.
+
+4. STANDARD DELIMITER SPLITTING
+   If no prefix or pattern matched, the proxy splits the reference on '_' or '-' 
+   and tests if the first token equals your Site Key.
+   (e.g., Reference `lufak_991823` -> splits to `lufak` -> routes to `lufak`).
+
+5. DEFAULT FALLBACK SINK
+   If no match is found anywhere, the event is routed to the designated 
+   `fallback` site and logged in the dead-letter monitor so no data is ever lost.
+
+
+================================================================================
+5. HOW TO INITIATE PAYSTACK TRANSACTIONS ON YOUR CHILD SITE
+================================================================================
+
+To ensure that Paystack payments originating from your website route back to 
+you with 100% accuracy, configure your Paystack transaction initialization call 
+using one of the following methods:
+
+--------------------------------------------------------------------------------
+OPTION A: Passing Origin via Metadata (RECOMMENDED)
+--------------------------------------------------------------------------------
+When calling `https://api.paystack.co/transaction/initialize` from your server, 
+include your Site Key inside the `metadata` object:
+
+```json
+{
+  "email": "customer@example.com",
+  "amount": "500000",
+  "reference": "order_custom_ref_98234",
+  "callback_url": "https://<proxy-domain>/api/v1/paystack/callback",
+  "metadata": {
+    "origin_site": "lufak",
+    "flow": "checkout"
+  }
+}
+```
+
+Recognized metadata field names for the site:
+- `"origin_site": "your_site_key"`
+- `"site": "your_site_key"`
+- `"site_id": "your_site_key"`
+- `"site_key": "your_site_key"`
+
+--------------------------------------------------------------------------------
+OPTION B: Using Reference Prefixes
+--------------------------------------------------------------------------------
+If you cannot easily modify metadata in your payment library, name your 
+transaction references starting with your registered prefix or Site Key:
+
+- Format: `<site_key>_<unique_order_id>`
+- Example: `lufak_order_12948` or `tsk_wallet_cust_88291`
+
+The proxy automatically reads the prefix and delivers the webhook and callback 
+to your site.
+
+--------------------------------------------------------------------------------
+OPTION C: Dynamic Per-Transaction Redirect Paths
+--------------------------------------------------------------------------------
+If you want a specific order to redirect to a unique dynamic completion page 
+(e.g., `/orders/INV-1092` instead of your static default callback URL), pass 
+`redirect_path` in metadata:
+
+```json
+{
+  "email": "customer@example.com",
+  "amount": "150000",
+  "metadata": {
+    "origin_site": "lufak",
+    "redirect_path": "/dashboard/orders/INV-1092"
+  }
+}
+```
+The proxy will resolve `/dashboard/orders/INV-1092` against your base 
+Callback URL and redirect the customer to:
+`https://store.lufak.com/dashboard/orders/INV-1092?reference=...&status=success`
+
+
+================================================================================
+6. RECEIVING & VERIFYING WEBHOOKS ON YOUR BACKEND
+================================================================================
+
+--------------------------------------------------------------------------------
+HEADERS SENT BY THE PROXY
+--------------------------------------------------------------------------------
+When the proxy forwards an event to your Downstream Webhook URL, it sends an 
+HTTP POST request containing the exact raw JSON body from Paystack, along with 
+these headers:
+
+| Header Name            | Description                                          |
+|------------------------|------------------------------------------------------|
+| `Content-Type`         | `application/json`                                   |
+| `x-proxy-signature`    | HMAC-SHA256 hex digest of raw body using your secret  |
+| `x-proxy-timestamp`    | ISO 8601 timestamp of dispatch from the proxy        |
+| `x-paystack-signature` | The original HMAC-SHA512 signature from Paystack     |
+| `x-correlation-id`     | Unique UUID for tracing this event across all logs   |
+| `x-target-site`        | Your child site key (e.g. `lufak`)                   |
+
+--------------------------------------------------------------------------------
+SIGNATURE VERIFICATION (SECURITY)
+--------------------------------------------------------------------------------
+Always verify the `x-proxy-signature` header on your backend using your 
+configured Site Secret Key (or the proxy shared secret) to prevent spoofing.
+
+Here are production-ready code examples:
+
+### Node.js (Express) Example
+```javascript
+const express = require('express');
+const crypto = require('crypto');
+
+const app = express();
+const SITE_SECRET = process.env.PROXY_SITE_SECRET || 'your_configured_secret';
+
+// IMPORTANT: Capture the unparsed raw body buffer for HMAC calculation
+app.post(
+  '/api/v1/paystack/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res) => {
+    const rawBody = req.body;
+    const proxySignature = req.headers['x-proxy-signature'];
+
+    if (!proxySignature) {
+      return res.status(401).send('Missing x-proxy-signature header');
+    }
+
+    // Compute expected HMAC SHA256 signature
+    const hmac = crypto.createHmac('sha256', SITE_SECRET);
+    hmac.update(rawBody);
+    const expectedSignature = hmac.digest('hex');
+
+    // Timing-safe comparison to prevent timing attacks
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(proxySignature, 'hex'),
+      Buffer.from(expectedSignature, 'hex')
+    );
+
+    if (!isValid) {
+      return res.status(403).send('Invalid signature');
+    }
+
+    // Signature is authentic! Parse body and process event
+    const event = JSON.parse(rawBody.toString('utf8'));
+    console.log(`Received verified Paystack event: ${event.event}`, event.data.reference);
+
+    // Return 200 OK immediately
+    return res.status(200).json({ status: 'success' });
+  }
+);
+
+app.listen(8080, () => console.log('Listening on port 8080'));
+```
+
+### PHP / Laravel Example
+```php
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+
+class PaystackWebhookController extends Controller
+{
+    public function handle(Request $request)
+    {
+        $secret = config('services.proxy.site_secret'); // configured secret
+        $signature = $request->header('x-proxy-signature');
+        $rawBody = $request->getContent(); // Get unparsed raw payload
+
+        if (!$signature) {
+            return response('Missing signature header', 401);
+        }
+
+        $expected = hash_hmac('sha256', $rawBody, $secret);
+
+        if (!hash_equals($expected, $signature)) {
+            Log::warning('Paystack Proxy signature mismatch');
+            return response('Invalid signature', 403);
+        }
+
+        $payload = json_decode($rawBody, true);
+        $eventName = $payload['event'] ?? 'unknown';
+        $reference = $payload['data']['reference'] ?? 'unknown';
+
+        Log::info("Verified webhook: {$eventName} for reference: {$reference}");
+
+        // Fulfill order, update database, etc.
+
+        return response()->json(['status' => 'success'], 200);
+    }
+}
+```
+
+### Python (FastAPI) Example
+```python
+import hmac
+import hashlib
+import json
+from fastapi import FastAPI, Request, HTTPException, Header
+
+app = FastAPI()
+SITE_SECRET = "your_configured_secret"
+
+@app.post("/api/v1/paystack/webhook")
+async def paystack_webhook(
+    request: Request,
+    x_proxy_signature: str = Header(None)
+):
+    if not x_proxy_signature:
+        raise HTTPException(status_code=401, detail="Missing signature header")
+
+    raw_body = await request.body()
+    expected_sig = hmac.new(
+        SITE_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected_sig, x_proxy_signature):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    payload = json.loads(raw_body.decode("utf-8"))
+    event = payload.get("event")
+    reference = payload.get("data", {}).get("reference")
+    
+    print(f"Verified event: {event} with reference {reference}")
+
+    return {"status": "success"}
+```
+
+--------------------------------------------------------------------------------
+RESPONSE EXPECTATIONS & TIMEOUTS
+--------------------------------------------------------------------------------
+- Respond Fast: Your endpoint must respond within 8 seconds (8000ms).
+- HTTP Status: Return HTTP 200 OK (or any status in the 200-299 range).
+- Offload Long Tasks: If fulfilling an order or sending emails takes time, 
+  push the job to an internal background worker or queue (e.g. BullMQ, Celery, 
+  Sidekiq) and immediately return 200 OK to the proxy.
+
+
+================================================================================
+7. CUSTOMER BROWSER CALLBACK & REDIRECTION FLOW
+================================================================================
+
+When a customer makes a payment on Paystack checkout:
+1. Customer's browser completes the payment on checkout.paystack.com.
+2. Paystack redirects the browser to the Proxy Callback URL:
+   `https://<proxy-domain>/api/v1/paystack/callback?trxref=ref_123&reference=ref_123`
+3. The Proxy intercepts this request, queries Paystack's REST API in real time 
+   to verify that the payment was truly successful.
+4. The Proxy resolves which child site owns the transaction (using metadata or 
+   reference prefix).
+5. The Proxy checks if a flow-specific URL applies:
+   - If metadata has `"flow": "wallet"`, routes to your Wallet Callback URL.
+   - If metadata has `"flow": "checkout"`, routes to your Checkout Callback URL.
+   - Otherwise, routes to your Default Callback Redirection URL.
+6. The Proxy redirects the customer (HTTP 302) to your destination URL with 
+   the verified status:
+   `https://store.example.com/checkout/complete?reference=ref_123&status=success&trxref=ref_123`
+
+Your frontend/backend can read `?reference=...&status=success` and display 
+the receipt or confirmation screen to the customer.
+
+
+================================================================================
+8. TESTING YOUR CHILD SITE INTEGRATION
+================================================================================
+
+The Proxy Dashboard includes built-in developer tools so you can test your 
+integration before going live:
+
+--------------------------------------------------------------------------------
+TEST 1: Reachability Ping (In "Sites Manager")
+--------------------------------------------------------------------------------
+1. Go to the "Sites Manager" tab in the dashboard.
+2. Find your site's card.
+3. Click the [Test Reachability] button with the refresh icon.
+4. The proxy will send an HTTP HEAD/GET request to your Webhook URL.
+   - If green: "Reachable (XXms)" -> Your server is accessible from the proxy!
+   - If red: "Unreachable" -> Your server could not be reached (check firewall, 
+     DNS, or SSL certificates).
+
+--------------------------------------------------------------------------------
+TEST 2: Webhook Simulator (In "Webhook Simulator" Tab)
+--------------------------------------------------------------------------------
+1. In the top navigation, click the "Webhook Simulator" tab.
+2. Select your site from the "Target Site" dropdown.
+3. Select an event template (e.g., `charge.success`, `subscription.create`, 
+   `charge.failed`, `transfer.success`).
+4. Click [Dispatch Test Event].
+5. The simulator will sign the payload with your configured secret and fire 
+   it directly to your Webhook URL.
+6. Check your server logs and the simulator response panel to verify that 
+   your code verified the signature and returned 200 OK.
+
+--------------------------------------------------------------------------------
+TEST 3: Transaction Verifier (In "Transaction Verifier" Tab)
+--------------------------------------------------------------------------------
+1. In the top navigation, click the "Transaction Verifier" tab.
+2. Enter any real Paystack transaction reference (e.g., from a test payment).
+3. Click [Verify Reference].
+4. The dashboard will query Paystack, display the payment details, and show 
+   you exactly how the proxy would route both the webhook and the browser callback.
+
+
+================================================================================
+9. ERROR HANDLING, DEDUPLICATION & RETRIES
+================================================================================
+
+- Built-in Deduplication (24-Hour Idempotency Cache):
+  Paystack frequently sends duplicate webhook events for network retries. 
+  The proxy tracks every unique event key (`event:reference`) in its cache. 
+  If Paystack delivers the same event twice, the proxy immediately returns 
+  HTTP 200 to Paystack without forwarding the duplicate to your site. This 
+  protects your backend from double-crediting customers.
+
+- Automatic Exponential Backoff Retries:
+  If your server is temporarily down, restarts, or times out (>8s), the proxy 
+  keeps the event in an asynchronous retry queue and re-attempts delivery up 
+  to 4 times:
+  - Attempt 1: Immediate
+  - Attempt 2: After 15 seconds (+15s)
+  - Attempt 3: After 1 minute (+1m)
+  - Attempt 4: After 5 minutes (+5m)
+  - Attempt 5: After 15 minutes (+15m)
+
+- Dead-Letter Alerts:
+  If all 5 attempts fail, the event is marked as DEAD_LETTER in the live event 
+  log, and an alert is automatically sent to the operations team via Discord/Telegram 
+  so manual intervention can occur without losing transactions.
+
+
+================================================================================
+10. FREQUENTLY ASKED QUESTIONS (DEVELOPER FAQ)
+================================================================================
+
+Q1: Do I need to configure webhooks inside my personal Paystack account?
+A: No! The main Paystack merchant account is already configured to point to 
+   the Proxy. All you need to do is register your child site inside this 
+   Proxy Dashboard.
+
+Q2: Can I have multiple reference prefixes for one site?
+A: Yes! In the "Reference Prefixes" field, simply separate them with commas 
+   (e.g., `tsk_store, tsk_wallet, tsk_data, topup`). Any payment reference 
+   starting with any of these prefixes will route to you.
+
+Q3: What if another child site has a prefix that starts similarly to mine?
+A: The proxy sorts all prefixes across all sites by length from longest to 
+   shortest. If Site A has prefix `tsk_store` and Site B has prefix `tsk`, a 
+   transaction reference `tsk_store_123` will safely route to Site A because 
+   `tsk_store` is longer and more specific.
+
+Q4: Do I need to whitelist Paystack IP addresses on my server?
+A: No. Because webhooks arrive from the Proxy server (not directly from 
+   Paystack), your server will see the Proxy server's IP address. Simply 
+   verify the `x-proxy-signature` header on incoming requests to guarantee 
+   authenticity.
+
+Q5: What happens if my server returns an HTTP 500 error?
+A: The proxy treats any HTTP status other than 2xx as a temporary failure and 
+   schedules the event for automatic retry with exponential backoff.
+
+Q6: How does the proxy know which site to redirect the browser to?
+A: When Paystack sends the browser callback, the proxy queries Paystack to fetch 
+   the transaction's metadata and reference. It then matches your Site Key or 
+   reference prefix and redirects the customer to your configured callback URL.
+
+Q7: Can I change my Webhook URL or Callback URL later?
+A: Yes. Return to the "Sites Manager" tab at any time, click the [Edit] (pencil) 
+   icon on your site's card, update any field, and click [Save Changes]. Changes 
+   take effect immediately without needing to restart the proxy.
+
+Q8: What if a payment has no prefix and no metadata?
+A: It will route to the designated `fallback` site, and an alert will be logged 
+   in the proxy's Live Event Log so the administrator can inspect it.
+
+================================================================================
+Need help or encountering issues? Check the "Live Event Log & Queue" tab in 
+the dashboard to view real-time delivery logs, correlation IDs, and error traces.
+================================================================================
