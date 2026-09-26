@@ -4,7 +4,7 @@ import { validatePaystackSignature } from '../middleware/auth.js';
 import { ipWhitelist } from '../middleware/ipWhitelist.js';
 import { queueService, metrics } from '../services/queue.js';
 import { dispatchWebhook } from '../services/dispatcher.js';
-import { logger } from '../config/index.js';
+import { logger, syncSitesWithDb } from '../config/index.js';
 
 /**
  * Extracts a stable, unique identifier for an event payload.
@@ -91,6 +91,10 @@ router.post(
           message: 'Event already received and processed',
           duplicate: true,
         });
+      }
+
+      if (typeof syncSitesWithDb === 'function') {
+        await syncSitesWithDb();
       }
 
       // Dispatch event to child site asynchronously

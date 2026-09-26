@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { paystackService } from '../services/paystack.js';
 import { resolveSite, resolveTargetCallbackUrl } from '../services/dispatcher.js';
-import { getSite, logger } from '../config/index.js';
+import { getSite, logger, syncSitesWithDb } from '../config/index.js';
 import { metrics } from '../services/queue.js';
 
 const router = Router();
@@ -61,6 +61,10 @@ router.get('/callback', async (req, res, next) => {
   }
 
   const reference = rawReference.trim();
+
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb();
+  }
 
   try {
     // 1. Query Paystack API to verify transaction status

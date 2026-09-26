@@ -105,7 +105,10 @@ function formatUptime(seconds) {
  * GET /api/v1/dashboard/stats
  * Real-time operational metrics and health overview
  */
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb();
+  }
   const uptimeSeconds = Math.floor(process.uptime());
   const memory = process.memoryUsage();
   const queueMetrics = queueService.getMetrics();
@@ -327,9 +330,13 @@ router.get('/sites', async (req, res) => {
 
 /**
  * POST /api/v1/dashboard/sites
- * Add a new child site dynamically to sites.json
+ * Add a new child site dynamically to sites.json and PostgreSQL
  */
 router.post('/sites', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb(true);
+  }
+
   const {
     key,
     name,
@@ -398,16 +405,16 @@ router.post('/sites', async (req, res) => {
 
 /**
  * PUT /api/v1/dashboard/sites/:id
- * Update an existing child site in sites.json
+ * Update an existing child site in sites.json and PostgreSQL (upserts if not previously cached)
  */
 router.put('/sites/:id', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb(true);
+  }
+
   const { id } = req.params;
   const siteKey = String(id || '').trim().toLowerCase();
   const existingSites = getAllSites();
-
-  if (!existingSites[siteKey]) {
-    return res.status(404).json({ status: false, message: `Site '${siteKey}' not found` });
-  }
 
   const {
     name,
@@ -421,7 +428,7 @@ router.put('/sites/:id', async (req, res) => {
     callbackRules,
   } = req.body || {};
 
-  if (webhookUrl !== undefined) {
+  if (webhookUrl !== undefined && webhookUrl !== '') {
     try {
       new URL(webhookUrl);
     } catch {
@@ -437,10 +444,16 @@ router.put('/sites/:id', async (req, res) => {
     }
   }
 
-  const current = existingSites[siteKey];
+  const current = existingSites[siteKey] || {};
+  const finalWebhookUrl = webhookUrl !== undefined ? String(webhookUrl).trim() : (current.webhookUrl || '');
+
+  if (!finalWebhookUrl) {
+    return res.status(400).json({ status: false, message: `A valid webhookUrl is required for site '${siteKey}'` });
+  }
+
   const updatedData = {
-    name: name !== undefined ? String(name).trim() : current.name,
-    webhookUrl: webhookUrl !== undefined ? String(webhookUrl).trim() : current.webhookUrl,
+    name: name !== undefined ? String(name).trim() : (current.name || siteKey),
+    webhookUrl: finalWebhookUrl,
     callbackUrl: callbackUrl !== undefined ? String(callbackUrl).trim() : (current.callbackUrl || ''),
     secret: secret !== undefined ? String(secret).trim() : (current.secret || ''),
     referencePrefixes: referencePrefixes !== undefined ? normalizePrefixes(referencePrefixes) : (current.referencePrefixes || []),
@@ -454,7 +467,7 @@ router.put('/sites/:id', async (req, res) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(cleanNewKey)) {
       return res.status(400).json({ status: false, message: 'New site key contains invalid characters' });
     }
-    if (existingSites[cleanNewKey]) {
+    if (existingSites[cleanNewKey] && cleanNewKey !== siteKey) {
       return res.status(409).json({ status: false, message: `Site key '${cleanNewKey}' is already taken` });
     }
     await removeSite(siteKey);
@@ -479,13 +492,12 @@ router.put('/sites/:id', async (req, res) => {
  * Remove a child site from sites.json and PostgreSQL
  */
 router.delete('/sites/:id', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb(true);
+  }
+
   const { id } = req.params;
   const siteKey = String(id || '').trim().toLowerCase();
-  const existingSites = getAllSites();
-
-  if (!existingSites[siteKey]) {
-    return res.status(404).json({ status: false, message: `Site '${siteKey}' not found` });
-  }
 
   await removeSite(siteKey);
 
@@ -501,6 +513,10 @@ router.delete('/sites/:id', async (req, res) => {
  * Test reachability of a child site's webhook endpoint
  */
 router.post('/sites/:key/ping', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb(true);
+  }
+
   const { key } = req.params;
   const site = getSite(key);
 

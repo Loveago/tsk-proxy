@@ -101,17 +101,27 @@ function getSitesPgPool() {
   return sitesPgPool;
 }
 
-export async function syncSitesWithDb() {
+let tableCreated = false;
+let lastSyncTime = 0;
+
+export async function syncSitesWithDb(force = false) {
   const pool = getSitesPgPool();
   if (!pool) return sitesCache;
+  const now = Date.now();
+  if (!force && now - lastSyncTime < 2000) {
+    return sitesCache;
+  }
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS child_sites (
-        site_key VARCHAR(100) PRIMARY KEY,
-        data JSONB NOT NULL,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
+    if (!tableCreated) {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS child_sites (
+          site_key VARCHAR(100) PRIMARY KEY,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+      tableCreated = true;
+    }
     const res = await pool.query('SELECT site_key, data FROM child_sites');
     if (res.rows.length > 0) {
       const dbSites = {};
@@ -129,6 +139,7 @@ export async function syncSitesWithDb() {
         );
       }
     }
+    lastSyncTime = Date.now();
   } catch (err) {
     logger.warn({ err: err.message }, 'PostgreSQL child_sites sync warning; falling back to memory/file');
   }
@@ -218,6 +229,7 @@ export async function addOrUpdateSite(key, siteData) {
     }
   }
 
+  lastSyncTime = Date.now();
   return sitesCache;
 }
 
@@ -258,6 +270,7 @@ export async function removeSite(key) {
     }
   }
 
+  lastSyncTime = Date.now();
   return sitesCache;
 }
 
