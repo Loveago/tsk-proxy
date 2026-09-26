@@ -6,6 +6,7 @@ package-lock.json.bak
 # Production and build outputs
 frontend/.next/
 frontend/out/
+public/_next/
 build/
 dist/
 

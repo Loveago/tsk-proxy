@@ -4,13 +4,17 @@
   "buildCommand": "npm run build",
   "functions": {
     "api/index.js": {
-      "includeFiles": "{frontend/out/**,public/**,config/**}"
+      "includeFiles": [
+        "frontend/out/**",
+        "public/**",
+        "config/**"
+      ]
     }
   },
   "rewrites": [
     {
-      "source": "/(.*)",
-      "destination": "/api/index.js"
+      "source": "/:path((?!_next|favicon.ico|static).*)",
+      "destination": "/api/index.js?__path=/:path*"
     }
   ]
 }
