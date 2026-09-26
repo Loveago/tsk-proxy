@@ -142,15 +142,19 @@ await step('Next.js modern UI export in frontend/out', () => {
   return `index.html (${(stats.size / 1024).toFixed(1)} KB, Next.js static export validated)`;
 });
 
-// 7. Sync Next.js _next assets into public/ directory for Vercel CDN and Express serving
-await step('Syncing Next.js _next assets into public/ directory', () => {
+// 7. Sync Next.js _next assets and app.html into public/ directory for Vercel CDN and Express serving
+await step('Syncing Next.js build assets into public/ directory', () => {
   const outNextDir = path.join(projectRoot, 'frontend/out/_next');
   const publicNextDir = path.join(projectRoot, 'public/_next');
   if (fs.existsSync(outNextDir)) {
     fs.cpSync(outNextDir, publicNextDir, { recursive: true });
-    return 'Copied frontend/out/_next into public/_next directory';
   }
-  return 'No frontend/out/_next directory found';
+  const outIndexHtml = path.join(projectRoot, 'frontend/out/index.html');
+  const publicAppHtml = path.join(projectRoot, 'public/app.html');
+  if (fs.existsSync(outIndexHtml)) {
+    fs.copyFileSync(outIndexHtml, publicAppHtml);
+  }
+  return 'Copied frontend/out/_next and app.html into public/ directory';
 });
 
 if (hasErrors) {

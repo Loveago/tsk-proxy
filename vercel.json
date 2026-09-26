@@ -4,11 +4,7 @@
   "buildCommand": "npm run build",
   "functions": {
     "api/index.js": {
-      "includeFiles": [
-        "frontend/out/**",
-        "public/**",
-        "config/**"
-      ]
+      "includeFiles": "public/**"
     }
   },
   "rewrites": [

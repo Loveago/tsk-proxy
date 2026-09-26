@@ -97,11 +97,17 @@ export function createApp() {
     if (fs.existsSync(path.join(frontendOutDir, 'index.html'))) {
       return res.sendFile(path.join(frontendOutDir, 'index.html'));
     }
+    if (fs.existsSync(path.join(publicDir, 'app.html'))) {
+      return res.sendFile(path.join(publicDir, 'app.html'));
+    }
     res.sendFile(path.join(publicDir, 'index.html'));
   });
   app.get('/dashboard', (req, res) => {
     if (fs.existsSync(path.join(frontendOutDir, 'index.html'))) {
       return res.sendFile(path.join(frontendOutDir, 'index.html'));
+    }
+    if (fs.existsSync(path.join(publicDir, 'app.html'))) {
+      return res.sendFile(path.join(publicDir, 'app.html'));
     }
     res.sendFile(path.join(publicDir, 'index.html'));
   });
