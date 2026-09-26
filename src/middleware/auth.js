@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { config, logger } from '../config/index.js';
+import { config, logger, syncConfigWithDb } from '../config/index.js';
 
 /**
  * Timing-safe string comparison to prevent timing attacks.
@@ -61,7 +61,7 @@ export function verifyPaystackSignature(rawBody, signature, secret) {
 /**
  * Express middleware to validate Paystack webhook HMAC SHA512 signature.
  */
-export function validatePaystackSignature(req, res, next) {
+export async function validatePaystackSignature(req, res, next) {
   const signature = req.headers['x-paystack-signature'];
   const correlationId = req.id || req.headers['x-correlation-id'] || 'unknown';
 
@@ -80,6 +80,10 @@ export function validatePaystackSignature(req, res, next) {
       status: false,
       message: 'Missing raw request body',
     });
+  }
+
+  if (typeof syncConfigWithDb === 'function') {
+    await syncConfigWithDb();
   }
 
   const secret = config.paystack.webhookSecret || config.paystack.secretKey;

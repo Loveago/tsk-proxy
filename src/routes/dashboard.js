@@ -9,6 +9,7 @@ import {
   addOrUpdateSite,
   removeSite,
   syncSitesWithDb,
+  syncConfigWithDb,
   updateConfigAndEnv,
 } from '../config/index.js';
 import { queueService, metrics } from '../services/queue.js';
@@ -109,6 +110,9 @@ router.get('/stats', async (req, res) => {
   if (typeof syncSitesWithDb === 'function') {
     await syncSitesWithDb();
   }
+  if (typeof syncConfigWithDb === 'function') {
+    await syncConfigWithDb();
+  }
   const uptimeSeconds = Math.floor(process.uptime());
   const memory = process.memoryUsage();
   const queueMetrics = queueService.getMetrics();
@@ -157,7 +161,11 @@ router.get('/stats', async (req, res) => {
  * GET /api/v1/dashboard/config
  * Retrieves full runtime and persisted configuration
  */
-router.get('/config', (req, res) => {
+router.get('/config', async (req, res) => {
+  if (typeof syncConfigWithDb === 'function') {
+    await syncConfigWithDb(true);
+  }
+
   res.json({
     status: true,
     config: {
@@ -204,7 +212,7 @@ router.get('/config', (req, res) => {
  * POST /api/v1/dashboard/config
  * Persists and immediately applies configuration changes
  */
-router.post('/config', (req, res) => {
+router.post('/config', async (req, res) => {
   const updates = req.body;
   if (!updates || typeof updates !== 'object') {
     return res.status(400).json({
@@ -214,7 +222,7 @@ router.post('/config', (req, res) => {
   }
 
   try {
-    const updated = updateConfigAndEnv(updates);
+    const updated = await updateConfigAndEnv(updates);
 
     return res.json({
       status: true,

@@ -157,6 +157,9 @@ export default function Dashboard() {
     if (typeof window !== 'undefined') {
       window.location.hash = tabId;
     }
+    if (tabId === 'settings' || tabId === 'overview') {
+      fetchConfig();
+    }
   };
 
   // Webhook Simulator
@@ -566,7 +569,7 @@ export default function Dashboard() {
 
       const result = await res.json();
       if (result.status) {
-        showToastMsg('Configuration saved to .env and applied immediately without restart!');
+        showToastMsg('Configuration saved successfully and applied immediately without restart!');
         if (result.config) {
           setConfigData(prev => ({
             ...prev,
@@ -1947,7 +1950,7 @@ export default function Dashboard() {
                 Live Configuration & Environment Settings
               </h3>
               <p className="text-xs text-slate-300 mt-1">
-                Everything here is configurable live from the dashboard. Changes are persisted to the <code className="text-cyan-300">.env</code> file and applied immediately to the running server without needing a restart!
+                Everything here is configurable live from the dashboard. Changes are persisted to the database and applied immediately to the running server without needing a restart!
               </p>
             </div>
 

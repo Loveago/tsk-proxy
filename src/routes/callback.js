@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { paystackService } from '../services/paystack.js';
 import { resolveSite, resolveTargetCallbackUrl } from '../services/dispatcher.js';
-import { getSite, logger, syncSitesWithDb } from '../config/index.js';
+import { getSite, logger, syncSitesWithDb, syncConfigWithDb } from '../config/index.js';
 import { metrics } from '../services/queue.js';
 
 const router = Router();
@@ -64,6 +64,9 @@ router.get('/callback', async (req, res, next) => {
 
   if (typeof syncSitesWithDb === 'function') {
     await syncSitesWithDb();
+  }
+  if (typeof syncConfigWithDb === 'function') {
+    await syncConfigWithDb();
   }
 
   try {

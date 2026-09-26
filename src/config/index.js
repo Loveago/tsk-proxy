@@ -289,7 +289,7 @@ export function onConfigUpdated(listener) {
  * @param {object} updates - Key-value map of configuration updates (can be ENV_KEYS or camelCase or nested)
  * @returns {object} Updated config object
  */
-export function updateConfigAndEnv(updates = {}) {
+export async function updateConfigAndEnv(updates = {}) {
   const envPath = path.resolve(projectRoot, '.env');
   let envLines = [];
   if (fs.existsSync(envPath)) {
@@ -410,6 +410,78 @@ export function updateConfigAndEnv(updates = {}) {
   }
 
   // Apply to in-memory config & process.env
+  applyEnvUpdates(flatEnvUpdates);
+
+  // Update .env file lines
+  const keysToUpdate = new Set(Object.keys(flatEnvUpdates));
+  const newEnvLines = envLines.map(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('#') || !trimmed.includes('=')) {
+      return line;
+    }
+    const eqIdx = line.indexOf('=');
+    const lineKey = line.slice(0, eqIdx).trim();
+    if (keysToUpdate.has(lineKey)) {
+      keysToUpdate.delete(lineKey);
+      return `${lineKey}=${flatEnvUpdates[lineKey]}`;
+    }
+    return line;
+  });
+
+  // Append any keys that didn't exist in .env
+  for (const remainingKey of keysToUpdate) {
+    newEnvLines.push(`${remainingKey}=${flatEnvUpdates[remainingKey]}`);
+  }
+
+  try {
+    fs.writeFileSync(envPath, newEnvLines.join('\n'), 'utf8');
+    logger.info({ updatedKeys: Object.keys(flatEnvUpdates) }, 'Configuration updated and written to .env');
+  } catch (err) {
+    logger.warn({ err: err.message }, 'Read-only filesystem (Vercel); updated configuration in memory and database');
+  }
+
+  // Persist dynamic configuration to PostgreSQL app_config table
+  const pool = getSitesPgPool();
+  if (pool) {
+    try {
+      if (!configTableCreated) {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS app_config (
+            key VARCHAR(100) PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          );
+        `);
+        configTableCreated = true;
+      }
+      for (const [key, val] of Object.entries(flatEnvUpdates)) {
+        await pool.query(
+          `INSERT INTO app_config (key, value, updated_at) VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+          [key, String(val)]
+        );
+      }
+      lastConfigSyncTime = Date.now();
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Failed to persist app_config to PostgreSQL');
+    }
+  }
+
+  // Notify registered listeners (e.g. queueService to dynamically adapt)
+  for (const listener of configUpdateListeners) {
+    try {
+      listener(config, flatEnvUpdates);
+    } catch (err) {
+      logger.error({ err: err.message }, 'Error in config update listener');
+    }
+  }
+
+  return config;
+}
+
+export function applyEnvUpdates(flatEnvUpdates) {
+  if (!flatEnvUpdates || typeof flatEnvUpdates !== 'object') return;
+
   for (const [key, val] of Object.entries(flatEnvUpdates)) {
     process.env[key] = val;
 
@@ -424,7 +496,7 @@ export function updateConfigAndEnv(updates = {}) {
         config.paystack.enableIpWhitelist = val === 'true' || val === true;
         break;
       case 'PAYSTACK_IP_WHITELIST':
-        config.paystack.ipWhitelist = val.split(',').map(s => s.trim()).filter(Boolean);
+        config.paystack.ipWhitelist = typeof val === 'string' ? val.split(',').map(s => s.trim()).filter(Boolean) : (Array.isArray(val) ? val : []);
         break;
       case 'PROXY_SHARED_SECRET':
         config.proxy.sharedSecret = val;
@@ -438,7 +510,7 @@ export function updateConfigAndEnv(updates = {}) {
         break;
       }
       case 'RETRY_DELAYS_MS':
-        config.proxy.retryDelays = val.split(',').map(d => parseInt(d.trim(), 10)).filter(d => !Number.isNaN(d));
+        config.proxy.retryDelays = typeof val === 'string' ? val.split(',').map(d => parseInt(d.trim(), 10)).filter(d => !Number.isNaN(d)) : (Array.isArray(val) ? val : [15000, 60000, 300000, 900000]);
         break;
       case 'QUEUE_STORAGE_TYPE':
         config.proxy.queueStore = val;
@@ -501,46 +573,54 @@ export function updateConfigAndEnv(updates = {}) {
         break;
     }
   }
+}
 
-  // Update .env file lines
-  const keysToUpdate = new Set(Object.keys(flatEnvUpdates));
-  const newEnvLines = envLines.map(line => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('#') || !trimmed.includes('=')) {
-      return line;
-    }
-    const eqIdx = line.indexOf('=');
-    const lineKey = line.slice(0, eqIdx).trim();
-    if (keysToUpdate.has(lineKey)) {
-      keysToUpdate.delete(lineKey);
-      return `${lineKey}=${flatEnvUpdates[lineKey]}`;
-    }
-    return line;
-  });
+let configTableCreated = false;
+let lastConfigSyncTime = 0;
 
-  // Append any keys that didn't exist in .env
-  for (const remainingKey of keysToUpdate) {
-    newEnvLines.push(`${remainingKey}=${flatEnvUpdates[remainingKey]}`);
+export async function syncConfigWithDb(force = false) {
+  const pool = getSitesPgPool();
+  if (!pool) return config;
+  const now = Date.now();
+  if (!force && now - lastConfigSyncTime < 2000) {
+    return config;
   }
-
   try {
-    fs.writeFileSync(envPath, newEnvLines.join('\n'), 'utf8');
-    logger.info({ updatedKeys: Object.keys(flatEnvUpdates) }, 'Configuration updated and written to .env');
-  } catch (err) {
-    logger.error({ err: err.message }, 'Failed to write updated configuration to .env');
-  }
-
-  // Notify registered listeners (e.g. queueService to dynamically adapt)
-  for (const listener of configUpdateListeners) {
-    try {
-      listener(config, flatEnvUpdates);
-    } catch (err) {
-      logger.error({ err: err.message }, 'Error in config update listener');
+    if (!configTableCreated) {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS app_config (
+          key VARCHAR(100) PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+      configTableCreated = true;
     }
-  }
+    const res = await pool.query('SELECT key, value FROM app_config');
+    if (res.rows.length > 0) {
+      const dbUpdates = {};
+      for (const row of res.rows) {
+        dbUpdates[row.key] = row.value;
+      }
+      applyEnvUpdates(dbUpdates);
 
+      for (const listener of configUpdateListeners) {
+        try {
+          listener(config, dbUpdates);
+        } catch (err) {
+          logger.error({ err: err.message }, 'Error in config update listener during DB sync');
+        }
+      }
+    }
+    lastConfigSyncTime = Date.now();
+  } catch (err) {
+    logger.warn({ err: err.message }, 'PostgreSQL app_config sync warning; using memory/env defaults');
+  }
   return config;
 }
+
+// Initial background sync
+syncConfigWithDb().catch(() => {});
 
 export default {
   config,
@@ -552,6 +632,8 @@ export default {
   addOrUpdateSite,
   removeSite,
   syncSitesWithDb,
+  syncConfigWithDb,
+  applyEnvUpdates,
   updateConfigAndEnv,
   onConfigUpdated,
   setSitesForTesting,
