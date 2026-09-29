@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { paystackService } from '../services/paystack.js';
 import { resolveSite, resolveTargetCallbackUrl } from '../services/dispatcher.js';
 import { getSite, logger, syncSitesWithDb, syncConfigWithDb } from '../config/index.js';
-import { metrics } from '../services/queue.js';
+import { queueService, metrics } from '../services/queue.js';
 
 const router = Router();
 
@@ -45,11 +45,13 @@ function renderHtmlError(title, message, reference = '', details = '') {
  */
 router.get('/callback', async (req, res, next) => {
   metrics.callbacksTotal++;
+  queueService.emit('stats', queueService.getMetrics());
   const correlationId = req.id || req.headers['x-correlation-id'] || 'unknown';
   const rawReference = req.query.reference || req.query.trxref;
 
   if (!rawReference || typeof rawReference !== 'string' || rawReference.trim().length === 0) {
     metrics.callbacksFailed++;
+    queueService.emit('stats', queueService.getMetrics());
     logger.warn({ correlationId, query: req.query }, 'Callback accessed without transaction reference');
     return res.status(400).send(
       renderHtmlError(
@@ -75,6 +77,7 @@ router.get('/callback', async (req, res, next) => {
 
     if (!verifyResult.success || !verifyResult.data) {
       metrics.callbacksFailed++;
+      queueService.emit('stats', queueService.getMetrics());
       logger.error(
         { correlationId, reference, err: verifyResult.message },
         'Failed to verify transaction status with Paystack'
@@ -141,6 +144,7 @@ router.get('/callback', async (req, res, next) => {
 
     if (!targetSite || !targetCallbackUrl) {
       metrics.callbacksFailed++;
+      queueService.emit('stats', queueService.getMetrics());
       logger.warn(
         { correlationId, reference, txData },
         'Unroutable callback: Target site could not be resolved or lacks callbackUrl'
@@ -157,6 +161,7 @@ router.get('/callback', async (req, res, next) => {
     }
 
     metrics.callbacksSuccess++;
+    queueService.emit('stats', queueService.getMetrics());
 
     // 3. Format target redirect URL
     let destinationUrl;

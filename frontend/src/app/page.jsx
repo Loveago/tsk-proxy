@@ -320,6 +320,57 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [autoRefresh, authToken, fetchStatsAndEvents]);
 
+  // Server-Sent Events (SSE) stream for instant real-time sync with fallback to polling
+  useEffect(() => {
+    if (!authToken || !autoRefresh || typeof window === 'undefined' || !window.EventSource) return;
+
+    let eventSource = null;
+    try {
+      const streamUrl = `/api/v1/dashboard/events/stream?token=${encodeURIComponent(authToken)}`;
+      eventSource = new EventSource(streamUrl);
+
+      eventSource.addEventListener('stats', (e) => {
+        try {
+          const statsData = JSON.parse(e.data);
+          if (statsData?.metrics) {
+            setStats(statsData);
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('event', (e) => {
+        try {
+          const evt = JSON.parse(e.data);
+          if (evt?.id) {
+            setEvents(prev => {
+              const idx = prev.findIndex(item => item.id === evt.id);
+              if (idx >= 0) {
+                const nextList = [...prev];
+                nextList[idx] = evt;
+                return nextList;
+              }
+              return [evt, ...prev].slice(0, 100);
+            });
+          }
+        } catch {}
+      });
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+        }
+      };
+    } catch (err) {
+      console.warn('SSE connection failed, falling back to interval polling:', err);
+    }
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [authToken, autoRefresh]);
+
   // Ping a child site
   const handlePingSite = async (key) => {
     setPingingKey(key);
@@ -1100,7 +1151,7 @@ export default function Dashboard() {
             </div>
 
             {/* Top Stat Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3 sm:gap-4">
               <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 shadow-sm hover:border-cyan-500/40 transition-colors">
                 <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
                   <span>Ingested</span>
@@ -1142,7 +1193,7 @@ export default function Dashboard() {
                 <div className="text-2xl font-bold font-mono text-amber-400">
                   {stats?.metrics?.retries ?? 0}
                 </div>
-                <span className="text-[11px] text-slate-500">Queued retries</span>
+                <span className="text-[11px] text-slate-500">{stats?.metrics?.queuedRetries ?? 0} active in queue</span>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 shadow-sm hover:border-red-500/40 transition-colors">
@@ -1154,6 +1205,17 @@ export default function Dashboard() {
                   {stats?.metrics?.deadLetters ?? 0}
                 </div>
                 <span className="text-[11px] text-slate-500">Exceeded max attempts</span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 shadow-sm hover:border-rose-500/40 transition-colors">
+                <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+                  <span>Unroutable</span>
+                  <GitFork className="w-4 h-4 text-rose-400" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-rose-400">
+                  {stats?.metrics?.unroutable ?? 0}
+                </div>
+                <span className="text-[11px] text-slate-500">No rule matched</span>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 shadow-sm hover:border-sky-500/40 transition-colors">
@@ -1212,18 +1274,48 @@ export default function Dashboard() {
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-800/60">
                       <span className="text-slate-400">Queue Storage</span>
-                      <span className="font-mono text-cyan-300 uppercase font-semibold">{stats?.storageType || 'memory'}</span>
+                      <span className="font-mono text-cyan-300 uppercase font-semibold px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/50">
+                        {stats?.storageType || 'memory'}
+                      </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-800/60">
                       <span className="text-slate-400">IP Whitelisting</span>
-                      <span className={`font-medium ${stats?.ipWhitelistEnabled ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      <span className={`font-medium px-2 py-0.5 rounded text-[11px] border ${
+                        stats?.ipWhitelistEnabled
+                          ? 'text-emerald-400 bg-emerald-950/50 border-emerald-800/60'
+                          : 'text-amber-400 bg-amber-950/50 border-amber-800/60'
+                      }`}>
                         {stats?.ipWhitelistEnabled ? 'Enabled' : 'Disabled (Allow all)'}
                       </span>
                     </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-slate-400">Paystack Secret</span>
-                      <span className={`font-medium ${stats?.secretConfigured ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <div className="flex justify-between py-1 border-b border-slate-800/60">
+                      <span className="text-slate-400">Paystack API Secret</span>
+                      <span className={`font-medium px-2 py-0.5 rounded text-[11px] border ${
+                        stats?.secretConfigured
+                          ? 'text-emerald-400 bg-emerald-950/50 border-emerald-800/60'
+                          : 'text-red-400 bg-red-950/50 border-red-800/60'
+                      }`}>
                         {stats?.secretConfigured ? 'Configured & Active' : 'Missing'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-800/60">
+                      <span className="text-slate-400">Webhook HMAC Secret</span>
+                      <span className={`font-medium px-2 py-0.5 rounded text-[11px] border ${
+                        stats?.webhookSecretConfigured
+                          ? 'text-emerald-400 bg-emerald-950/50 border-emerald-800/60'
+                          : 'text-cyan-400 bg-cyan-950/50 border-cyan-800/60'
+                      }`}>
+                        {stats?.webhookSecretConfigured ? 'Dedicated Secret' : 'Active (API Key)'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-slate-400">Database Store</span>
+                      <span className={`font-medium px-2 py-0.5 rounded text-[11px] border ${
+                        stats?.databaseConfigured
+                          ? 'text-emerald-400 bg-emerald-950/50 border-emerald-800/60'
+                          : 'text-slate-400 bg-slate-900 border-slate-800'
+                      }`}>
+                        {stats?.databaseConfigured ? 'PostgreSQL Attached' : 'Local / Memory'}
                       </span>
                     </div>
                   </div>
@@ -1252,7 +1344,7 @@ export default function Dashboard() {
                         style={{
                           width: `${Math.min(
                             100,
-                            Math.round(((stats?.memory?.heapUsedBytes || 1) / (stats?.memory?.heapTotalBytes || 1)) * 100)
+                            stats?.memory?.heapPercent ?? Math.round(((stats?.memory?.heapUsedBytes || 1) / (stats?.memory?.heapTotalBytes || 1)) * 100)
                           )}%`,
                         }}
                       />
@@ -1262,10 +1354,20 @@ export default function Dashboard() {
                   <div>
                     <div className="flex justify-between text-xs text-slate-400 mb-1">
                       <span>Resident Set (RSS)</span>
-                      <span className="font-mono text-slate-200">{stats?.memory?.rssMb || '0'} MB</span>
+                      <span className="font-mono text-slate-200">
+                        {stats?.memory?.rssMb || '0'} MB {stats?.memory?.heapLimitMb ? `(Max: ${stats.memory.heapLimitMb} MB)` : ''}
+                      </span>
                     </div>
                     <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                      <div className="bg-blue-500 h-2 rounded-full" style={{ width: '40%' }} />
+                      <div
+                        className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            stats?.memory?.rssPercent ?? Math.min(100, Math.max(5, Math.round(((stats?.memory?.rssBytes || 1) / (stats?.memory?.heapLimitBytes || (1024 * 1024 * 1024))) * 100)))
+                          )}%`,
+                        }}
+                      />
                     </div>
                   </div>
 

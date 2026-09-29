@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import EventEmitter from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 let DatabaseSync = null;
@@ -502,8 +503,9 @@ export class PostgresIdempotencyStore {
 // Dispatch Queue & Retry Worker
 // -------------------------------------------------------------
 
-export class QueueService {
+export class QueueService extends EventEmitter {
   constructor(options = {}) {
+    super();
     this._customStoreType = options.queueStore;
     this._customRetryDelays = options.retryDelays;
     this._customMaxRetries = options.maxRetries;
@@ -659,6 +661,9 @@ export class QueueService {
       this.recentEvents.pop();
     }
 
+    this.emit('event', entry);
+    this.emit('stats', this.getMetrics());
+
     if (this.idempotencyStore && typeof this.idempotencyStore.recordEventLog === 'function') {
       this.idempotencyStore.recordEventLog(entry).catch(err => {
         logger.warn({ err: err.message }, 'Failed to persist event log to PostgreSQL');
@@ -670,6 +675,8 @@ export class QueueService {
     const entry = this.recentEvents.find(e => e.id === id);
     if (entry) {
       Object.assign(entry, patch);
+      this.emit('event', entry);
+      this.emit('stats', this.getMetrics());
       if (this.idempotencyStore && typeof this.idempotencyStore.recordEventLog === 'function') {
         this.idempotencyStore.recordEventLog(entry).catch(err => {
           logger.warn({ err: err.message }, 'Failed to update event log in PostgreSQL');
@@ -987,6 +994,7 @@ export class QueueService {
     if (this.idempotencyStore) {
       await this.idempotencyStore.clear();
     }
+    this.emit('stats', this.getMetrics());
   }
 
   async close() {

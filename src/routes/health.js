@@ -43,6 +43,8 @@ router.get('/metrics', (req, res) => {
       retries: queueMetrics.retries,
       deadLetters: queueMetrics.deadLetters,
       unroutable: queueMetrics.unroutable,
+      avgLatencyMs: queueMetrics.avgLatencyMs || 0,
+      lastLatencyMs: queueMetrics.lastLatencyMs || 0,
     },
     queue: {
       activeJobs: queueMetrics.activeJobs,

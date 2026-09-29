@@ -1,0 +1,352 @@
+================================================================================
+PAYSTACK MULTI-SITE PROXY & POSTGRESQL - 100% COPY & PASTE VPS GUIDE
+================================================================================
+
+This guide is designed for direct copy-and-paste execution on an Ubuntu VPS
+(Ubuntu 22.04 or 24.04 LTS).
+
+Choose either:
+  - OPTION A: The All-In-One Automated Script (Copy & Paste one single block)
+  - OPTION B: Step-By-Step Copy-and-Paste Command Blocks (No manual editing)
+
+================================================================================
+OPTION A: ALL-IN-ONE COPY & PASTE SCRIPT
+================================================================================
+Connect to your VPS as root:
+    ssh root@YOUR_SERVER_IP
+
+Set your configuration variables and paste the entire block below into your
+terminal:
+
+```bash
+# ==============================================================================
+# 1. SET YOUR VARIABLES (Change these values before pasting)
+# ==============================================================================
+export DOMAIN="proxy.yourdomain.com"
+export SSL_EMAIL="admin@yourdomain.com"
+export DB_PASSWORD="YourStrongDatabasePassword123!"
+export PAYSTACK_KEY="sk_live_your_actual_paystack_secret_key"
+export PROXY_SECRET="replace_with_a_secure_random_proxy_shared_secret_32_chars"
+export DASHBOARD_PASS="YourSecureAdminPassword123!"
+export REPO_URL="https://github.com/Loveago/tsk-proxy.git"
+
+# ==============================================================================
+# 2. SYSTEM PACKAGES & FIREWALL
+# ==============================================================================
+apt update && apt upgrade -y
+apt install -y curl git nginx postgresql postgresql-contrib certbot python3-certbot-nginx ufw
+
+# Configure Firewall
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow ssh
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+
+# ==============================================================================
+# 3. INSTALL NODE.JS 20 LTS & PM2
+# ==============================================================================
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs
+npm install -g pm2
+
+# ==============================================================================
+# 4. CONFIGURE POSTGRESQL DATABASE
+# ==============================================================================
+systemctl start postgresql
+systemctl enable postgresql
+
+sudo -u postgres psql << EOF
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'paystack_user') THEN
+    CREATE USER paystack_user WITH PASSWORD '$DB_PASSWORD';
+  ELSE
+    ALTER USER paystack_user WITH PASSWORD '$DB_PASSWORD';
+  END IF;
+END
+\$\$;
+
+SELECT 'CREATE DATABASE paystack_proxy OWNER paystack_user'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'paystack_proxy')\gexec
+
+GRANT ALL PRIVILEGES ON DATABASE paystack_proxy TO paystack_user;
+\c paystack_proxy
+GRANT ALL ON SCHEMA public TO paystack_user;
+EOF
+
+# ==============================================================================
+# 5. CLONE & INSTALL PROXY APPLICATION
+# ==============================================================================
+mkdir -p /var/www/tsk-proxy
+if [ -d "/var/www/tsk-proxy/.git" ]; then
+    cd /var/www/tsk-proxy && git pull
+else
+    git clone $REPO_URL /var/www/tsk-proxy
+    cd /var/www/tsk-proxy
+fi
+
+npm install
+npm --prefix frontend install
+
+# ==============================================================================
+# 6. WRITE PRODUCTION .ENV FILE
+# ==============================================================================
+cat << EOF > /var/www/tsk-proxy/.env
+PORT=3000
+NODE_ENV=production
+LOG_LEVEL=info
+
+PAYSTACK_SECRET_KEY=$PAYSTACK_KEY
+PAYSTACK_WEBHOOK_SECRET=$PAYSTACK_KEY
+
+PROXY_SHARED_SECRET=$PROXY_SECRET
+DASHBOARD_PASSWORD=$DASHBOARD_PASS
+
+ENABLE_IP_WHITELIST=true
+PAYSTACK_IP_WHITELIST=52.31.139.228,52.214.14.220,54.76.137.41
+
+QUEUE_STORAGE_TYPE=postgres
+DATABASE_URL=postgresql://paystack_user:$DB_PASSWORD@127.0.0.1:5432/paystack_proxy
+IDEMPOTENCY_TTL_SECONDS=86400
+
+FORWARD_TIMEOUT_MS=8000
+MAX_RETRIES=4
+RETRY_DELAYS_MS=15000,60000,300000,900000
+SITES_CONFIG_PATH=./config/sites.json
+EOF
+
+# ==============================================================================
+# 7. BUILD FRONTEND ASSETS & START WITH PM2
+# ==============================================================================
+npm run build
+
+pm2 delete paystack-proxy || true
+pm2 start ecosystem.config.cjs --env production
+pm2 save
+pm2 startup systemd -u root --hp /root || true
+
+# ==============================================================================
+# 8. CONFIGURE NGINX REVERSE PROXY
+# ==============================================================================
+cat << EOF > /etc/nginx/sites-available/paystack-proxy
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # Server-Sent Events (SSE) & WebSocket support
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Cache-Control "no-cache";
+
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+EOF
+
+ln -sf /etc/nginx/sites-available/paystack-proxy /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl restart nginx
+
+# ==============================================================================
+# 9. OBTAIN SSL CERTIFICATE (LET'S ENCRYPT)
+# ==============================================================================
+certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $SSL_EMAIL --redirect
+
+# ==============================================================================
+# 10. AUTOMATED DAILY POSTGRESQL BACKUP CRON
+# ==============================================================================
+mkdir -p /var/backups/postgresql
+
+cat << 'EOF' > /usr/local/bin/backup-paystack-db.sh
+#!/bin/bash
+BACKUP_DIR="/var/backups/postgresql"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+BACKUP_FILE="$BACKUP_DIR/paystack_proxy_$TIMESTAMP.sql.gz"
+
+sudo -u postgres pg_dump paystack_proxy | gzip > "$BACKUP_FILE"
+find "$BACKUP_DIR" -type f -name "*.sql.gz" -mtime +14 -exec rm {} +
+EOF
+
+chmod +x /usr/local/bin/backup-paystack-db.sh
+
+# Add to crontab if not already present
+(crontab -l 2>/dev/null | grep -F "backup-paystack-db.sh") || (crontab -l 2>/dev/null; echo "0 2 * * * /usr/local/bin/backup-paystack-db.sh") | crontab -
+
+echo "=================================================================="
+echo "DEPLOYMENT COMPLETE!"
+echo "Dashboard URL: https://$DOMAIN"
+echo "Webhook URL:   https://$DOMAIN/api/v1/paystack/webhook"
+echo "Callback URL:  https://$DOMAIN/api/v1/paystack/callback"
+echo "=================================================================="
+```
+
+================================================================================
+OPTION B: STEP-BY-STEP COPY & PASTE BLOCKS
+================================================================================
+
+If you prefer to run each step individually, copy and paste each block:
+
+--- STEP 1: System Packages, Firewall & Node.js 20 ---
+```bash
+apt update && apt upgrade -y
+apt install -y curl git nginx postgresql postgresql-contrib certbot python3-certbot-nginx ufw
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs
+npm install -g pm2
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow ssh
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+```
+
+--- STEP 2: Configure PostgreSQL ---
+```bash
+systemctl start postgresql && systemctl enable postgresql
+
+sudo -u postgres psql << 'EOF'
+CREATE USER paystack_user WITH PASSWORD 'YourStrongDbPasswordHere123!';
+CREATE DATABASE paystack_proxy OWNER paystack_user;
+GRANT ALL PRIVILEGES ON DATABASE paystack_proxy TO paystack_user;
+\c paystack_proxy
+GRANT ALL ON SCHEMA public TO paystack_user;
+EOF
+```
+
+--- STEP 3: Clone Code & Install Dependencies ---
+```bash
+mkdir -p /var/www/tsk-proxy
+cd /var/www/tsk-proxy
+git clone https://github.com/Loveago/tsk-proxy.git .
+npm install
+npm --prefix frontend install
+```
+
+--- STEP 4: Create Production .env ---
+```bash
+cat << 'EOF' > /var/www/tsk-proxy/.env
+PORT=3000
+NODE_ENV=production
+LOG_LEVEL=info
+
+PAYSTACK_SECRET_KEY=sk_live_your_key_here
+PAYSTACK_WEBHOOK_SECRET=sk_live_your_key_here
+
+PROXY_SHARED_SECRET=your_random_proxy_shared_secret_at_least_32_characters_long
+DASHBOARD_PASSWORD=YourSecureAdminPasswordHere!
+
+ENABLE_IP_WHITELIST=true
+PAYSTACK_IP_WHITELIST=52.31.139.228,52.214.14.220,54.76.137.41
+
+QUEUE_STORAGE_TYPE=postgres
+DATABASE_URL=postgresql://paystack_user:YourStrongDbPasswordHere123!@127.0.0.1:5432/paystack_proxy
+IDEMPOTENCY_TTL_SECONDS=86400
+
+FORWARD_TIMEOUT_MS=8000
+MAX_RETRIES=4
+RETRY_DELAYS_MS=15000,60000,300000,900000
+SITES_CONFIG_PATH=./config/sites.json
+EOF
+```
+
+--- STEP 5: Build & Start with PM2 ---
+```bash
+cd /var/www/tsk-proxy
+npm run build
+pm2 start ecosystem.config.cjs --env production
+pm2 save
+pm2 startup systemd -u root --hp /root
+```
+
+--- STEP 6: Configure Nginx ---
+*(Replace proxy.yourdomain.com with your domain)*
+```bash
+cat << 'EOF' > /etc/nginx/sites-available/paystack-proxy
+server {
+    listen 80;
+    server_name proxy.yourdomain.com;
+
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Cache-Control "no-cache";
+
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+EOF
+
+ln -sf /etc/nginx/sites-available/paystack-proxy /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl restart nginx
+```
+
+--- STEP 7: Generate SSL Certificate ---
+*(Replace proxy.yourdomain.com and admin@yourdomain.com)*
+```bash
+certbot --nginx -d proxy.yourdomain.com --non-interactive --agree-tos -m admin@yourdomain.com --redirect
+```
+
+--- STEP 8: Setup Daily Automated Backups ---
+```bash
+mkdir -p /var/backups/postgresql
+
+cat << 'EOF' > /usr/local/bin/backup-paystack-db.sh
+#!/bin/bash
+BACKUP_DIR="/var/backups/postgresql"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+BACKUP_FILE="$BACKUP_DIR/paystack_proxy_$TIMESTAMP.sql.gz"
+
+sudo -u postgres pg_dump paystack_proxy | gzip > "$BACKUP_FILE"
+find "$BACKUP_DIR" -type f -name "*.sql.gz" -mtime +14 -exec rm {} +
+EOF
+
+chmod +x /usr/local/bin/backup-paystack-db.sh
+(crontab -l 2>/dev/null | grep -F "backup-paystack-db.sh") || (crontab -l 2>/dev/null; echo "0 2 * * * /usr/local/bin/backup-paystack-db.sh") | crontab -
+```
+
+================================================================================
+HELPFUL COMMANDS FOR ONGOING MAINTENANCE
+================================================================================
+- View live proxy logs:
+    pm2 logs paystack-proxy
+
+- Zero-downtime application reload:
+    cd /var/www/tsk-proxy && git pull && npm run build && pm2 reload paystack-proxy
+
+- Check PostgreSQL service status:
+    systemctl status postgresql
+
+- Check Nginx status:
+    systemctl status nginx
+
+- Test Health Check endpoint:
+    curl -i http://localhost:3000/health

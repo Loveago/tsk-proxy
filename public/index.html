@@ -234,7 +234,62 @@
     .metric-duplicates::before { background: var(--purple); }
     .metric-retries::before { background: var(--amber); }
     .metric-deadletters::before { background: var(--red); }
+    .metric-unroutable::before { background: #f97316; }
+    .metric-latency::before { background: var(--cyan); }
+    .metric-lastlatency::before { background: #34d399; }
+    .metric-callbacks::before { background: #38bdf8; }
     .metric-uptime::before { background: var(--cyan); }
+
+    .overview-status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 768px) {
+      .overview-status-grid { grid-template-columns: 1fr; }
+    }
+    .status-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+    }
+    .status-panel-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .gauge-container {
+      margin-bottom: 12px;
+    }
+    .gauge-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .gauge-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .gauge-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.4s ease;
+    }
+    .gauge-cyan { background: var(--cyan); }
+    .gauge-blue { background: #38bdf8; }
 
     .metric-title {
       font-size: 0.8rem;
@@ -866,6 +921,113 @@
         <div class="metric-value" id="valDeadLetters">0</div>
         <div class="metric-sub" id="subUnroutable">0 unroutable events</div>
       </div>
+
+      <div class="metric-card metric-unroutable">
+        <div class="metric-title">
+          <span>Unroutable</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+        </div>
+        <div class="metric-value" id="valUnroutable">0</div>
+        <div class="metric-sub">No matching site rule</div>
+      </div>
+
+      <div class="metric-card metric-latency">
+        <div class="metric-title">
+          <span>Avg Latency</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </div>
+        <div class="metric-value"><span id="valAvgLatency">0</span><span style="font-size: 0.85rem; font-weight: 400; color: var(--text-muted); margin-left: 4px;">ms</span></div>
+        <div class="metric-sub">Downstream transit</div>
+      </div>
+
+      <div class="metric-card metric-lastlatency">
+        <div class="metric-title">
+          <span>Last Latency</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        </div>
+        <div class="metric-value"><span id="valLastLatency">0</span><span style="font-size: 0.85rem; font-weight: 400; color: var(--text-muted); margin-left: 4px;">ms</span></div>
+        <div class="metric-sub">Latest dispatch</div>
+      </div>
+
+      <div class="metric-card metric-callbacks">
+        <div class="metric-title">
+          <span>Callbacks</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path><circle cx="12" cy="12" r="2"></circle><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"></path></svg>
+        </div>
+        <div class="metric-value" id="valCallbacksTotal">0</div>
+        <div class="metric-sub"><span id="subCallbacksSuccess" style="color: var(--accent-primary);">0 verified</span> • <span id="subCallbacksFailed" style="color: var(--red);">0 failed</span></div>
+      </div>
+    </section>
+
+    <!-- Overview Status & Resource Footprint Section -->
+    <section class="overview-status-grid">
+      <!-- Runtime Status Panel -->
+      <div class="status-panel">
+        <div class="status-panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+          Runtime Status
+        </div>
+        <table style="width: 100%; font-size: 0.8rem; border-collapse: collapse;">
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 6px 0; color: var(--text-muted);">Process Uptime:</td>
+            <td style="padding: 6px 0; text-align: right; font-family: monospace;" id="valUptimeText">-</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 6px 0; color: var(--text-muted);">Node Runtime:</td>
+            <td style="padding: 6px 0; text-align: right; font-family: monospace;" id="valNodeRuntimeText">-</td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 6px 0; color: var(--text-muted);">Queue Storage:</td>
+            <td style="padding: 6px 0; text-align: right;"><span class="badge badge-site" id="valStorageBadge">MEMORY</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 6px 0; color: var(--text-muted);">IP Whitelisting:</td>
+            <td style="padding: 6px 0; text-align: right;"><span class="badge" id="valIpWhitelistBadge">-</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 6px 0; color: var(--text-muted);">Paystack API Secret:</td>
+            <td style="padding: 6px 0; text-align: right;"><span class="badge" id="valSecretBadge">-</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 6px 0; color: var(--text-muted);">Webhook HMAC Secret:</td>
+            <td style="padding: 6px 0; text-align: right;"><span class="badge" id="valWebhookSecretBadge">-</span></td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: var(--text-muted);">Database Store:</td>
+            <td style="padding: 6px 0; text-align: right;"><span class="badge" id="valDatabaseBadge">-</span></td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Memory & Resource Footprint Panel -->
+      <div class="status-panel">
+        <div class="status-panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="15" x2="23" y2="15"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="15" x2="4" y2="15"></line></svg>
+          Memory & Resource Footprint
+        </div>
+        <div class="gauge-container">
+          <div class="gauge-header">
+            <span>Heap Memory Used</span>
+            <span style="font-family: monospace;" id="valHeapText">0 MB / 0 MB</span>
+          </div>
+          <div class="gauge-bar-bg">
+            <div class="gauge-bar-fill gauge-cyan" id="barHeapUsed" style="width: 0%;"></div>
+          </div>
+        </div>
+        <div class="gauge-container" style="margin-bottom: 16px;">
+          <div class="gauge-header">
+            <span>Resident Set (RSS)</span>
+            <span style="font-family: monospace;" id="valRssText">0 MB</span>
+          </div>
+          <div class="gauge-bar-bg">
+            <div class="gauge-bar-fill gauge-blue" id="barRss" style="width: 0%;"></div>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; padding-top: 10px; border-top: 1px solid var(--border-color);">
+          <span style="color: var(--text-muted);">Active Jobs: <strong id="valActiveJobs" style="color: var(--cyan); font-family: monospace;">0</strong></span>
+          <span style="color: var(--text-muted);">Queued Retries: <strong id="valQueuedRetries" style="color: var(--amber); font-family: monospace;">0</strong></span>
+        </div>
+      </div>
     </section>
 
     <!-- Navigation Tabs -->
@@ -1260,6 +1422,14 @@
                 <td style="color: var(--text-muted);">Paystack Secret:</td>
                 <td id="diagSecret">-</td>
               </tr>
+              <tr>
+                <td style="color: var(--text-muted);">Webhook Secret:</td>
+                <td id="diagWebhookSecret">-</td>
+              </tr>
+              <tr>
+                <td style="color: var(--text-muted);">Database Store:</td>
+                <td id="diagDatabase">-</td>
+              </tr>
             </table>
           </div>
         </div>
@@ -1373,7 +1543,28 @@
       valRetries: document.getElementById('valRetries'),
       subActiveJobs: document.getElementById('subActiveJobs'),
       valDeadLetters: document.getElementById('valDeadLetters'),
+      valUnroutable: document.getElementById('valUnroutable'),
       subUnroutable: document.getElementById('subUnroutable'),
+      valAvgLatency: document.getElementById('valAvgLatency'),
+      valLastLatency: document.getElementById('valLastLatency'),
+      valCallbacksTotal: document.getElementById('valCallbacksTotal'),
+      subCallbacksSuccess: document.getElementById('subCallbacksSuccess'),
+      subCallbacksFailed: document.getElementById('subCallbacksFailed'),
+      valUptimeText: document.getElementById('valUptimeText'),
+      valNodeRuntimeText: document.getElementById('valNodeRuntimeText'),
+      valStorageBadge: document.getElementById('valStorageBadge'),
+      valIpWhitelistBadge: document.getElementById('valIpWhitelistBadge'),
+      valSecretBadge: document.getElementById('valSecretBadge'),
+      valWebhookSecretBadge: document.getElementById('valWebhookSecretBadge'),
+      valDatabaseBadge: document.getElementById('valDatabaseBadge'),
+      valHeapText: document.getElementById('valHeapText'),
+      barHeapUsed: document.getElementById('barHeapUsed'),
+      valRssText: document.getElementById('valRssText'),
+      barRss: document.getElementById('barRss'),
+      valActiveJobs: document.getElementById('valActiveJobs'),
+      valQueuedRetries: document.getElementById('valQueuedRetries'),
+      diagWebhookSecret: document.getElementById('diagWebhookSecret'),
+      diagDatabase: document.getElementById('diagDatabase'),
       uptimeHeader: document.getElementById('uptimeHeader'),
       badgeEventsCount: document.getElementById('badgeEventsCount'),
       badgeSitesCount: document.getElementById('badgeSitesCount'),
@@ -1561,38 +1752,124 @@
       }
     }
 
+    function applyStats(data) {
+      if (!data || data.status !== 'ok') return;
+      state.stats = data;
+
+      elements.valIngested.textContent = (data.metrics.ingested || 0).toLocaleString();
+      elements.valForwarded.textContent = (data.metrics.forwarded || 0).toLocaleString();
+      elements.valDuplicates.textContent = (data.metrics.duplicates || 0).toLocaleString();
+      elements.valRetries.textContent = (data.metrics.retries || 0).toLocaleString();
+      elements.valDeadLetters.textContent = (data.metrics.deadLetters || 0).toLocaleString();
+      elements.valUnroutable.textContent = (data.metrics.unroutable || 0).toLocaleString();
+      if (elements.valAvgLatency) elements.valAvgLatency.textContent = (data.metrics.avgLatencyMs || 0).toLocaleString();
+      if (elements.valLastLatency) elements.valLastLatency.textContent = (data.metrics.lastLatencyMs || 0).toLocaleString();
+      if (elements.valCallbacksTotal) elements.valCallbacksTotal.textContent = (data.metrics.callbacksTotal || 0).toLocaleString();
+      if (elements.subCallbacksSuccess) elements.subCallbacksSuccess.textContent = `${(data.metrics.callbacksSuccess || 0).toLocaleString()} verified`;
+      if (elements.subCallbacksFailed) elements.subCallbacksFailed.textContent = `${(data.metrics.callbacksFailed || 0).toLocaleString()} failed`;
+      elements.uptimeHeader.textContent = data.uptimeHuman || `${data.uptimeSeconds}s`;
+
+      const total = data.metrics.ingested;
+      const rate = total > 0 ? ((data.metrics.forwarded / total) * 100).toFixed(1) : '100';
+      elements.subForwardRate.textContent = `${rate}% downstream success rate`;
+      elements.subActiveJobs.textContent = `${data.metrics.queuedRetries || 0} queued retries (${data.metrics.activeJobs || 0} active)`;
+      elements.subUnroutable.textContent = `${data.metrics.unroutable || 0} unroutable events`;
+      elements.envBadge.textContent = data.env.toUpperCase();
+
+      // Overview Status Panel
+      if (elements.valUptimeText) elements.valUptimeText.textContent = data.uptimeHuman || `${data.uptimeSeconds}s`;
+      if (elements.valNodeRuntimeText) elements.valNodeRuntimeText.textContent = data.nodeVersion || '-';
+      if (elements.valStorageBadge) {
+        elements.valStorageBadge.textContent = (data.storageType || 'memory').toUpperCase();
+      }
+      if (elements.valIpWhitelistBadge) {
+        elements.valIpWhitelistBadge.textContent = data.ipWhitelistEnabled ? 'Enabled' : 'Disabled (Allow all)';
+        elements.valIpWhitelistBadge.className = `badge ${data.ipWhitelistEnabled ? 'badge-success' : 'badge-queued'}`;
+      }
+      if (elements.valSecretBadge) {
+        elements.valSecretBadge.textContent = data.secretConfigured ? 'Configured & Active' : 'Missing';
+        elements.valSecretBadge.className = `badge ${data.secretConfigured ? 'badge-success' : 'badge-error'}`;
+      }
+      if (elements.valWebhookSecretBadge) {
+        elements.valWebhookSecretBadge.textContent = data.webhookSecretConfigured ? 'Dedicated Secret' : 'Active (API Key)';
+        elements.valWebhookSecretBadge.className = `badge ${data.webhookSecretConfigured ? 'badge-success' : 'badge-site'}`;
+      }
+      if (elements.valDatabaseBadge) {
+        elements.valDatabaseBadge.textContent = data.databaseConfigured ? 'PostgreSQL Attached' : 'Local / Memory';
+        elements.valDatabaseBadge.className = `badge ${data.databaseConfigured ? 'badge-success' : 'badge-queued'}`;
+      }
+
+      // Memory Gauges
+      if (elements.valHeapText) elements.valHeapText.textContent = `${data.memory.heapUsedMb} MB / ${data.memory.heapTotalMb} MB`;
+      if (elements.barHeapUsed) elements.barHeapUsed.style.width = `${data.memory.heapPercent || 0}%`;
+      if (elements.valRssText) elements.valRssText.textContent = `${data.memory.rssMb} MB (Max: ${data.memory.heapLimitMb || '-'} MB)`;
+      if (elements.barRss) elements.barRss.style.width = `${data.memory.rssPercent || 0}%`;
+      if (elements.valActiveJobs) elements.valActiveJobs.textContent = (data.metrics.activeJobs || 0).toLocaleString();
+      if (elements.valQueuedRetries) elements.valQueuedRetries.textContent = (data.metrics.queuedRetries || 0).toLocaleString();
+
+      // Diagnostics Tab
+      document.getElementById('diagNode').textContent = data.nodeVersion;
+      document.getElementById('diagStorage').textContent = data.storageType;
+      document.getElementById('diagUptime').textContent = data.uptimeHuman;
+      document.getElementById('diagHeap').textContent = `${data.memory.heapUsedMb} MB / ${data.memory.heapTotalMb} MB`;
+      document.getElementById('diagRss').textContent = `${data.memory.rssMb} MB`;
+      document.getElementById('diagIpWhitelist').textContent = data.ipWhitelistEnabled ? 'Enabled' : 'Disabled (Allow all)';
+      document.getElementById('diagSecret').textContent = data.secretConfigured ? 'Configured (Active)' : 'Not Configured';
+      if (elements.diagWebhookSecret) elements.diagWebhookSecret.textContent = data.webhookSecretConfigured ? 'Dedicated Secret Active' : 'Fallback to Secret Key';
+      if (elements.diagDatabase) elements.diagDatabase.textContent = data.databaseConfigured ? 'PostgreSQL Connected' : 'Local / In-Memory Store';
+    }
+
     // Load Stats & Metrics
     async function fetchStats() {
       try {
         const res = await authFetch('/api/v1/dashboard/stats');
         const data = await res.json();
-        if (!data || data.status !== 'ok') return;
-
-        state.stats = data;
-        elements.valIngested.textContent = data.metrics.ingested.toLocaleString();
-        elements.valForwarded.textContent = data.metrics.forwarded.toLocaleString();
-        elements.valDuplicates.textContent = data.metrics.duplicates.toLocaleString();
-        elements.valRetries.textContent = (data.metrics.queuedRetries || 0).toLocaleString();
-        elements.valDeadLetters.textContent = data.metrics.deadLetters.toLocaleString();
-        elements.uptimeHeader.textContent = data.uptimeHuman || `${data.uptimeSeconds}s`;
-
-        const total = data.metrics.ingested;
-        const rate = total > 0 ? ((data.metrics.forwarded / total) * 100).toFixed(1) : '100';
-        elements.subForwardRate.textContent = `${rate}% downstream success rate`;
-        elements.subActiveJobs.textContent = `${data.metrics.activeJobs || 0} active jobs in queue`;
-        elements.subUnroutable.textContent = `${data.metrics.unroutable || 0} unroutable events`;
-        elements.envBadge.textContent = data.env.toUpperCase();
-
-        // Diagnostics
-        document.getElementById('diagNode').textContent = data.nodeVersion;
-        document.getElementById('diagStorage').textContent = data.storageType;
-        document.getElementById('diagUptime').textContent = data.uptimeHuman;
-        document.getElementById('diagHeap').textContent = `${data.memory.heapUsedMb} MB / ${data.memory.heapTotalMb} MB`;
-        document.getElementById('diagRss').textContent = `${data.memory.rssMb} MB`;
-        document.getElementById('diagIpWhitelist').textContent = data.ipWhitelistEnabled ? 'Enabled' : 'Disabled (Allow all)';
-        document.getElementById('diagSecret').textContent = data.secretConfigured ? 'Configured (Active)' : 'Not Configured';
+        applyStats(data);
       } catch (err) {
         console.error('Failed to fetch dashboard stats', err);
+      }
+    }
+
+    // Connect SSE Live Stream
+    let sseSource = null;
+    function connectEventStream() {
+      const token = getAuthToken();
+      if (!token || typeof window.EventSource === 'undefined') return;
+      if (sseSource) {
+        try { sseSource.close(); } catch {}
+        sseSource = null;
+      }
+      try {
+        sseSource = new EventSource(`/api/v1/dashboard/events/stream?token=${encodeURIComponent(token)}`);
+        sseSource.addEventListener('stats', (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            applyStats(data);
+          } catch {}
+        });
+        sseSource.addEventListener('event', (e) => {
+          try {
+            const evt = JSON.parse(e.data);
+            if (evt && evt.id) {
+              const idx = state.events.findIndex(x => x.id === evt.id);
+              if (idx >= 0) {
+                state.events[idx] = evt;
+              } else {
+                state.events.unshift(evt);
+                if (state.events.length > 100) state.events.pop();
+              }
+              renderEventsTable();
+            }
+          } catch {}
+        });
+        sseSource.onerror = () => {
+          if (sseSource) {
+            try { sseSource.close(); } catch {}
+            sseSource = null;
+          }
+        };
+      } catch (err) {
+        console.warn('SSE connection failed in static dashboard:', err);
       }
     }
 
@@ -2180,6 +2457,10 @@
       localStorage.removeItem('paystack_proxy_token');
       document.getElementById('userBadgeWrapper').style.display = 'none';
       stopPolling();
+      if (sseSource) {
+        try { sseSource.close(); } catch {}
+        sseSource = null;
+      }
       showToast('Logged out');
       showLoginModal();
     });
@@ -2190,6 +2471,7 @@
       await Promise.all([fetchStats(), fetchSites(), fetchEvents()]);
       updateSimulatorPayload();
       startPolling();
+      connectEventStream();
     }
 
     // Check Authentication & Initialize

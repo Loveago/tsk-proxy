@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import os from 'node:os';
+import v8 from 'node:v8';
 import { Router } from 'express';
 import axios from 'axios';
 import {
@@ -146,19 +148,18 @@ function formatUptime(seconds) {
  * GET /api/v1/dashboard/stats
  * Real-time operational metrics and health overview
  */
-router.get('/stats', async (req, res) => {
-  if (typeof syncSitesWithDb === 'function') {
-    await syncSitesWithDb();
-  }
-  if (typeof syncConfigWithDb === 'function') {
-    await syncConfigWithDb();
-  }
+export function buildDashboardStats() {
   const uptimeSeconds = Math.floor(process.uptime());
   const memory = process.memoryUsage();
   const queueMetrics = queueService.getMetrics();
   const sites = getAllSites();
 
-  res.json({
+  const heapStats = typeof v8.getHeapStatistics === 'function' ? v8.getHeapStatistics() : null;
+  const heapLimitBytes = heapStats?.heap_size_limit || memory.heapTotal;
+  const totalSystemBytes = os.totalmem ? os.totalmem() : 0;
+  const freeSystemBytes = os.freemem ? os.freemem() : 0;
+
+  return {
     status: 'ok',
     uptimeSeconds,
     uptimeHuman: formatUptime(uptimeSeconds),
@@ -169,6 +170,8 @@ router.get('/stats', async (req, res) => {
     ipWhitelistEnabled: Boolean(config.paystack.enableIpWhitelist),
     secretConfigured: Boolean(config.paystack.secretKey),
     webhookSecretConfigured: Boolean(config.paystack.webhookSecret),
+    sharedSecretConfigured: Boolean(config.proxy?.sharedSecret),
+    databaseConfigured: Boolean(config.proxy?.databaseUrl || process.env.DATABASE_URL || process.env.POSTGRES_URL),
     port: config.port,
     sitesCount: Object.keys(sites).length,
     metrics: {
@@ -190,10 +193,76 @@ router.get('/stats', async (req, res) => {
       rssBytes: memory.rss,
       heapTotalBytes: memory.heapTotal,
       heapUsedBytes: memory.heapUsed,
+      heapLimitBytes,
+      totalSystemBytes,
+      freeSystemBytes,
       rssMb: (memory.rss / (1024 * 1024)).toFixed(1),
       heapUsedMb: (memory.heapUsed / (1024 * 1024)).toFixed(1),
       heapTotalMb: (memory.heapTotal / (1024 * 1024)).toFixed(1),
+      heapLimitMb: (heapLimitBytes / (1024 * 1024)).toFixed(1),
+      rssPercent: totalSystemBytes > 0 ? Math.min(100, Math.max(1, Math.round((memory.rss / totalSystemBytes) * 100))) : Math.min(100, Math.max(1, Math.round((memory.rss / (heapLimitBytes || memory.heapTotal)) * 100))),
+      heapPercent: Math.min(100, Math.max(1, Math.round(((memory.heapUsed || 1) / (memory.heapTotal || 1)) * 100))),
     },
+  };
+}
+
+/**
+ * GET /api/v1/dashboard/stats
+ * Real-time operational metrics and health overview
+ */
+router.get('/stats', async (req, res) => {
+  if (typeof syncSitesWithDb === 'function') {
+    await syncSitesWithDb();
+  }
+  if (typeof syncConfigWithDb === 'function') {
+    await syncConfigWithDb();
+  }
+  res.json(buildDashboardStats());
+});
+
+/**
+ * GET /api/v1/dashboard/events/stream
+ * GET /api/v1/dashboard/stream
+ * Server-Sent Events (SSE) live push stream for dashboard metrics and event logs.
+ */
+router.get(['/events/stream', '/stream'], requireDashboardAuth, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  // Push immediate initial stats snapshot
+  res.write(`event: stats\ndata: ${JSON.stringify(buildDashboardStats())}\n\n`);
+
+  const onEvent = (event) => {
+    try {
+      res.write(`event: event\ndata: ${JSON.stringify(event)}\n\n`);
+    } catch {}
+  };
+
+  const onStats = () => {
+    try {
+      res.write(`event: stats\ndata: ${JSON.stringify(buildDashboardStats())}\n\n`);
+    } catch {}
+  };
+
+  queueService.on('event', onEvent);
+  queueService.on('stats', onStats);
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': heartbeat\n\n');
+    } catch {}
+  }, 15000);
+  if (heartbeat.unref) heartbeat.unref();
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    queueService.removeListener('event', onEvent);
+    queueService.removeListener('stats', onStats);
   });
 });
 

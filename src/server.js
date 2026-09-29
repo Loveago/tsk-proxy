@@ -27,7 +27,9 @@ async function handleShutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
-  logger.info({ signal }, 'Shutdown signal received, starting graceful termination...');
+  if (typeof server.closeAllConnections === 'function') {
+    server.closeAllConnections();
+  }
 
   // Stop accepting new connections
   server.close(async () => {

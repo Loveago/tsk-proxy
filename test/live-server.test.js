@@ -84,6 +84,7 @@ describe('Standalone Server Process Live E2E Verification', () => {
         ENABLE_IP_WHITELIST: 'false',
         QUEUE_STORAGE_TYPE: 'memory',
         SITES_CONFIG_PATH: TEST_SITES_PATH,
+        DASHBOARD_PASSWORD: 'test-admin-live-pass',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -108,11 +109,22 @@ describe('Standalone Server Process Live E2E Verification', () => {
     if (serverProcess && !serverProcess.killed) {
       serverProcess.kill('SIGTERM');
       await new Promise(resolve => {
-        serverProcess.on('exit', resolve);
-        setTimeout(resolve, 2000);
+        const timer = setTimeout(() => {
+          try {
+            serverProcess.kill('SIGKILL');
+          } catch {}
+          resolve();
+        }, 1500);
+        serverProcess.once('exit', () => {
+          clearTimeout(timer);
+          resolve();
+        });
       });
     }
     if (mockDownstreamServer) {
+      if (typeof mockDownstreamServer.closeAllConnections === 'function') {
+        mockDownstreamServer.closeAllConnections();
+      }
       await new Promise(resolve => mockDownstreamServer.close(resolve));
     }
     if (fs.existsSync(TEST_SITES_PATH)) {
@@ -208,5 +220,84 @@ describe('Standalone Server Process Live E2E Verification', () => {
 
     await new Promise(r => setTimeout(r, 150));
     assert.equal(receivedDownstreamRequests.length, initialDownstreamCount, 'Duplicate webhook was wrongly dispatched downstream');
+  });
+
+  it('authenticates to dashboard and verifies all homepage metrics and system gauges on running server', async () => {
+    // 1. Authenticate to dashboard
+    const loginRes = await axios.post(`${SERVER_URL}/api/v1/dashboard/auth/login`, {
+      username: 'admin',
+      password: 'test-admin-live-pass',
+    });
+    assert.equal(loginRes.status, 200);
+    assert.equal(loginRes.data.status, true);
+    assert.ok(loginRes.data.token);
+    const token = loginRes.data.token;
+
+    // 2. Fetch stats
+    const statsRes = await axios.get(`${SERVER_URL}/api/v1/dashboard/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(statsRes.status, 200);
+    assert.equal(statsRes.data.status, 'ok');
+    assert.ok(statsRes.data.metrics);
+    assert.equal(typeof statsRes.data.metrics.ingested, 'number');
+    assert.equal(typeof statsRes.data.metrics.forwarded, 'number');
+    assert.equal(typeof statsRes.data.metrics.duplicates, 'number');
+    assert.equal(typeof statsRes.data.metrics.retries, 'number');
+    assert.equal(typeof statsRes.data.metrics.deadLetters, 'number');
+    assert.equal(typeof statsRes.data.metrics.unroutable, 'number');
+    assert.equal(typeof statsRes.data.metrics.callbacksTotal, 'number');
+    assert.equal(typeof statsRes.data.metrics.callbacksSuccess, 'number');
+    assert.equal(typeof statsRes.data.metrics.callbacksFailed, 'number');
+    assert.equal(typeof statsRes.data.metrics.activeJobs, 'number');
+    assert.equal(typeof statsRes.data.metrics.queuedRetries, 'number');
+    assert.equal(typeof statsRes.data.metrics.avgLatencyMs, 'number');
+    assert.equal(typeof statsRes.data.metrics.lastLatencyMs, 'number');
+
+    // Badges & Gauges
+    assert.equal(typeof statsRes.data.uptimeHuman, 'string');
+    assert.equal(typeof statsRes.data.nodeVersion, 'string');
+    assert.equal(statsRes.data.storageType, 'memory');
+    assert.equal(typeof statsRes.data.ipWhitelistEnabled, 'boolean');
+    assert.equal(typeof statsRes.data.secretConfigured, 'boolean');
+    assert.equal(typeof statsRes.data.webhookSecretConfigured, 'boolean');
+
+    // Memory
+    assert.ok(statsRes.data.memory);
+    assert.ok(statsRes.data.memory.heapUsedMb);
+    assert.ok(statsRes.data.memory.heapTotalMb);
+    assert.ok(statsRes.data.memory.rssMb);
+    assert.equal(typeof statsRes.data.memory.heapPercent, 'number');
+    assert.equal(typeof statsRes.data.memory.rssPercent, 'number');
+
+    // 3. Verify /metrics endpoint
+    const metricsRes = await axios.get(`${SERVER_URL}/metrics`);
+    assert.equal(metricsRes.status, 200);
+    assert.ok(metricsRes.data.events);
+    assert.equal(typeof metricsRes.data.events.unroutable, 'number');
+    assert.equal(typeof metricsRes.data.events.avgLatencyMs, 'number');
+    assert.equal(typeof metricsRes.data.events.lastLatencyMs, 'number');
+    assert.ok(metricsRes.data.queue);
+    assert.ok(metricsRes.data.callbacks);
+
+    // 4. Verify SSE stream on running standalone server
+    const sseRes = await axios.get(`${SERVER_URL}/api/v1/dashboard/events/stream`, {
+      headers: { Authorization: `Bearer ${token}` },
+      responseType: 'stream',
+      timeout: 3000,
+    });
+    assert.equal(sseRes.status, 200);
+    assert.match(sseRes.headers['content-type'], /text\/event-stream/);
+    await new Promise((resolve) => {
+      sseRes.data.on('data', chunk => {
+        const text = chunk.toString();
+        if (text.includes('event: stats')) {
+          assert.ok(text.includes('"status":"ok"'));
+          sseRes.data.destroy();
+          resolve();
+        }
+      });
+      sseRes.data.on('error', () => resolve());
+    });
   });
 });

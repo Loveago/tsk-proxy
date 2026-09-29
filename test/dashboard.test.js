@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -210,12 +211,63 @@ describe('Web UI Dashboard & Simulator Endpoints', () => {
       assert.equal(typeof res.body.metrics.ingested, 'number');
       assert.equal(typeof res.body.metrics.forwarded, 'number');
       assert.equal(typeof res.body.metrics.duplicates, 'number');
+      assert.equal(typeof res.body.metrics.retries, 'number');
       assert.equal(typeof res.body.metrics.deadLetters, 'number');
+      assert.equal(typeof res.body.metrics.unroutable, 'number');
+      assert.equal(typeof res.body.metrics.callbacksTotal, 'number');
+      assert.equal(typeof res.body.metrics.callbacksSuccess, 'number');
+      assert.equal(typeof res.body.metrics.callbacksFailed, 'number');
+      assert.equal(typeof res.body.metrics.activeJobs, 'number');
+      assert.equal(typeof res.body.metrics.queuedRetries, 'number');
       assert.equal(typeof res.body.metrics.avgLatencyMs, 'number');
       assert.equal(typeof res.body.metrics.lastLatencyMs, 'number');
       assert.equal(typeof res.body.sitesCount, 'number');
+      assert.equal(typeof res.body.storageType, 'string');
+      assert.equal(typeof res.body.ipWhitelistEnabled, 'boolean');
+      assert.equal(typeof res.body.secretConfigured, 'boolean');
+      assert.equal(typeof res.body.webhookSecretConfigured, 'boolean');
+      assert.equal(typeof res.body.sharedSecretConfigured, 'boolean');
+      assert.equal(typeof res.body.databaseConfigured, 'boolean');
       assert.ok(res.body.memory);
       assert.ok(res.body.memory.heapUsedMb);
+      assert.ok(res.body.memory.heapTotalMb);
+      assert.ok(res.body.memory.rssMb);
+      assert.equal(typeof res.body.memory.heapPercent, 'number');
+      assert.equal(typeof res.body.memory.rssPercent, 'number');
+    });
+  });
+
+  describe('GET /api/v1/dashboard/events/stream (SSE)', () => {
+    it('rejects unauthenticated requests with 401', async () => {
+      await request(app)
+        .get('/api/v1/dashboard/events/stream')
+        .expect(401);
+    });
+
+    it('establishes SSE stream and receives initial stats event snapshot', (done) => {
+      const server = app.listen(0, () => {
+        const port = server.address().port;
+        const req = http.get(
+          `http://127.0.0.1:${port}/api/v1/dashboard/events/stream?token=${encodeURIComponent(authToken)}`,
+          (res) => {
+            assert.equal(res.statusCode, 200);
+            assert.match(res.headers['content-type'], /text\/event-stream/);
+            let chunks = '';
+            res.on('data', (chunk) => {
+              chunks += chunk.toString();
+              if (chunks.includes('event: stats')) {
+                assert.ok(chunks.includes('"status":"ok"'));
+                assert.ok(chunks.includes('metrics'));
+                req.destroy();
+                server.close(done);
+              }
+            });
+          }
+        );
+        req.on('error', (err) => {
+          server.close(() => done(err));
+        });
+      });
     });
   });
 

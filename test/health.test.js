@@ -29,7 +29,15 @@ describe('Health & Metrics Endpoints', () => {
     assert.equal(typeof res.body.events.duplicates, 'number');
     assert.equal(typeof res.body.events.retries, 'number');
     assert.equal(typeof res.body.events.deadLetters, 'number');
+    assert.equal(typeof res.body.events.unroutable, 'number');
+    assert.equal(typeof res.body.events.avgLatencyMs, 'number');
+    assert.equal(typeof res.body.events.lastLatencyMs, 'number');
     assert.ok(res.body.queue);
+    assert.equal(typeof res.body.queue.activeJobs, 'number');
+    assert.equal(typeof res.body.queue.queuedRetries, 'number');
     assert.ok(res.body.callbacks);
+    assert.equal(typeof res.body.callbacks.total, 'number');
+    assert.equal(typeof res.body.callbacks.success, 'number');
+    assert.equal(typeof res.body.callbacks.failed, 'number');
   });
 });
