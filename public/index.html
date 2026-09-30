@@ -817,7 +817,7 @@
         </div>
       </a>
 
-      <div class="header-actions">
+      <div class="header-actions" id="headerActions" style="display: none;">
         <div class="system-status">
           <span class="status-dot"></span>
           <span id="healthStatusText">Operational</span>
@@ -1731,6 +1731,8 @@
       }
 
       function showLoginModal() {
+        const headerActions = document.getElementById('headerActions');
+        if (headerActions) headerActions.style.display = 'none';
         elements.loginOverlay.style.display = 'flex';
         elements.loginError.style.display = 'none';
         elements.loginPassword.value = '';
@@ -2432,6 +2434,8 @@
         if (res.ok && data.status && data.token) {
           localStorage.setItem('paystack_proxy_token', data.token);
           elements.currentUserBadge.textContent = data.user?.username || 'admin';
+          const headerActions = document.getElementById('headerActions');
+          if (headerActions) headerActions.style.display = 'flex';
           document.getElementById('userBadgeWrapper').style.display = 'flex';
           elements.loginOverlay.style.display = 'none';
           showToast(`Welcome back, ${data.user?.username || 'admin'}!`);
@@ -2488,6 +2492,8 @@
         if (res.ok) {
           const data = await res.json();
           elements.currentUserBadge.textContent = data.user?.username || 'admin';
+          const headerActions = document.getElementById('headerActions');
+          if (headerActions) headerActions.style.display = 'flex';
           document.getElementById('userBadgeWrapper').style.display = 'flex';
           elements.loginOverlay.style.display = 'none';
           await init();

@@ -839,41 +839,41 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
-              <span className={`w-2.5 h-2.5 rounded-full ${stats ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
-              <span className="text-slate-300 font-mono">
-                {stats ? `Port ${stats.port} • ${stats.env}` : 'Offline'}
-              </span>
-            </div>
+          {authToken && (
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+                <span className={`w-2.5 h-2.5 rounded-full ${stats ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
+                <span className="text-slate-300 font-mono">
+                  {stats ? `Port ${stats.port} • ${stats.env}` : 'Offline'}
+                </span>
+              </div>
 
-            <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition-colors ${
-                autoRefresh
-                  ? 'bg-cyan-950/60 border-cyan-700/60 text-cyan-300'
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
-              title="Toggle Live Auto-Refresh"
-            >
-              <Activity className={`w-3.5 h-3.5 ${autoRefresh ? 'animate-pulse text-cyan-400' : ''}`} />
-              <span>{autoRefresh ? 'Live (4s)' : 'Paused'}</span>
-            </button>
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition-colors ${
+                  autoRefresh
+                    ? 'bg-cyan-950/60 border-cyan-700/60 text-cyan-300'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+                title="Toggle Dashboard UI Auto-Refresh (Does NOT affect proxy forwarding)"
+              >
+                <Activity className={`w-3.5 h-3.5 ${autoRefresh ? 'animate-pulse text-cyan-400' : ''}`} />
+                <span>{autoRefresh ? 'Live Sync (4s)' : 'Sync Paused'}</span>
+              </button>
 
-            <button
-              onClick={() => {
-                fetchStatsAndEvents();
-                fetchSites();
-                fetchConfig();
-                showToastMsg('Dashboard data refreshed!');
-              }}
-              className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-              title="Refresh Data Now"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
+              <button
+                onClick={() => {
+                  fetchStatsAndEvents();
+                  fetchSites();
+                  fetchConfig();
+                  showToastMsg('Dashboard data refreshed!');
+                }}
+                className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                title="Refresh Data Now"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
 
-            {authToken && (
               <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
                 <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950/40 border border-cyan-800/50 text-cyan-300 text-xs">
                   <User className="w-3.5 h-3.5 text-cyan-400" />
@@ -888,8 +888,8 @@ export default function Dashboard() {
                   <span className="hidden sm:inline">Sign Out</span>
                 </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Navigation Tabs - Only visible when authenticated */}

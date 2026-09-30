@@ -22,12 +22,12 @@ terminal:
 # ==============================================================================
 # 1. SET YOUR VARIABLES (Change these values before pasting)
 # ==============================================================================
-export DOMAIN="proxy.yourdomain.com"
-export SSL_EMAIL="admin@yourdomain.com"
+export DOMAIN="proxy.tsk05.net"
+export SSL_EMAIL="admin@tsk05.net"
 export DB_PASSWORD="YourStrongDatabasePassword123!"
 export PAYSTACK_KEY="sk_live_your_actual_paystack_secret_key"
-export PROXY_SECRET="replace_with_a_secure_random_proxy_shared_secret_32_chars"
-export DASHBOARD_PASS="YourSecureAdminPassword123!"
+export PROXY_SECRET="ijdig70478u4;8yab28hdas;baeawbdsifefb;afd"
+export DASHBOARD_PASS="Shankaadmintop5123!"
 export REPO_URL="https://github.com/Loveago/tsk-proxy.git"
 
 # ==============================================================================
@@ -101,7 +101,8 @@ LOG_LEVEL=info
 PAYSTACK_SECRET_KEY=$PAYSTACK_KEY
 PAYSTACK_WEBHOOK_SECRET=$PAYSTACK_KEY
 
-PROXY_SHARED_SECRET=$PROXY_SECRET
+PROXY_SHARED_SECRET=7289d1e75031c024011411601eed143504797bfb7758b5e6eca04b5da0efa005
+
 DASHBOARD_PASSWORD=$DASHBOARD_PASS
 
 ENABLE_IP_WHITELIST=true
@@ -275,12 +276,12 @@ pm2 startup systemd -u root --hp /root
 ```
 
 --- STEP 6: Configure Nginx ---
-*(Replace proxy.yourdomain.com with your domain)*
+*(Configured for proxy.tsk05.net)*
 ```bash
 cat << 'EOF' > /etc/nginx/sites-available/paystack-proxy
 server {
     listen 80;
-    server_name proxy.yourdomain.com;
+    server_name proxy.tsk05.net;
 
     client_max_body_size 10M;
 
@@ -310,9 +311,9 @@ nginx -t && systemctl restart nginx
 ```
 
 --- STEP 7: Generate SSL Certificate ---
-*(Replace proxy.yourdomain.com and admin@yourdomain.com)*
+*(Configured for proxy.tsk05.net and admin@tsk05.net)*
 ```bash
-certbot --nginx -d proxy.yourdomain.com --non-interactive --agree-tos -m admin@yourdomain.com --redirect
+certbot --nginx -d proxy.tsk05.net --non-interactive --agree-tos -m admin@tsk05.net --redirect
 ```
 
 --- STEP 8: Setup Daily Automated Backups ---
