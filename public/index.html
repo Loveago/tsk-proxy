@@ -1068,18 +1068,25 @@
             <span>Recent Webhook Event Dispatches</span>
           </div>
 
-          <div style="display: flex; gap: 8px; align-items: center;">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <select class="filter-select" id="logStatusFilter">
               <option value="ALL">All Statuses</option>
-              <option value="SUCCESS">Success Only</option>
+              <option value="SUCCESS">Success / Delivered</option>
               <option value="PROCESSING">Processing / In-Flight</option>
+              <option value="QUEUED">Queued</option>
               <option value="RETRYING">Retrying</option>
               <option value="DEAD_LETTER">Dead Letter</option>
               <option value="DUPLICATE">Duplicate Blocked</option>
               <option value="UNROUTABLE">Unroutable</option>
             </select>
 
-            <input type="text" class="search-input" id="logSearchInput" placeholder="Filter by reference, site, or event..." style="width: 250px;">
+            <select class="filter-select" id="logSiteFilter">
+              <option value="ALL">All Child Sites</option>
+            </select>
+
+            <input type="text" class="search-input" id="logSearchInput" placeholder="Filter by reference, site, or event..." style="width: 230px;">
+
+            <button class="btn btn-sm" id="btnResetEventFilters" title="Reset all filters">Reset</button>
           </div>
         </div>
 
@@ -1105,6 +1112,30 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="pagination-bar" id="eventsPaginationBar" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border-color); font-size: 0.82rem; color: var(--text-muted); flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span id="lblEventsPaginationInfo">Showing 0 of 0 events</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span>Show</span>
+              <select id="selectEventsPageSize" class="filter-select" style="padding: 3px 8px; font-size: 0.8rem;">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span>per page</span>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 6px;" id="eventsPaginationControls">
+            <button class="btn btn-sm" id="btnEventsFirstPage" title="First Page">&laquo;</button>
+            <button class="btn btn-sm" id="btnEventsPrevPage" title="Previous Page">&lsaquo;</button>
+            <span id="lblEventsCurrentPage" style="padding: 0 8px; font-weight: 600; color: var(--text-primary);">Page 1 of 1</span>
+            <button class="btn btn-sm" id="btnEventsNextPage" title="Next Page">&rsaquo;</button>
+            <button class="btn btn-sm" id="btnEventsLastPage" title="Last Page">&raquo;</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1532,6 +1563,10 @@
       autoRefresh: true,
       refreshInterval: null,
       selectedSiteKey: '',
+      eventsPage: 1,
+      eventsLimit: 25,
+      eventsTotal: 0,
+      eventsTotalPages: 1,
     };
 
     // DOM Elements
@@ -1571,7 +1606,18 @@
       envBadge: document.getElementById('envBadge'),
       eventsTableBody: document.getElementById('eventsTableBody'),
       logStatusFilter: document.getElementById('logStatusFilter'),
+      logSiteFilter: document.getElementById('logSiteFilter'),
       logSearchInput: document.getElementById('logSearchInput'),
+      btnResetEventFilters: document.getElementById('btnResetEventFilters'),
+      eventsPaginationBar: document.getElementById('eventsPaginationBar'),
+      lblEventsPaginationInfo: document.getElementById('lblEventsPaginationInfo'),
+      selectEventsPageSize: document.getElementById('selectEventsPageSize'),
+      eventsPaginationControls: document.getElementById('eventsPaginationControls'),
+      btnEventsFirstPage: document.getElementById('btnEventsFirstPage'),
+      btnEventsPrevPage: document.getElementById('btnEventsPrevPage'),
+      lblEventsCurrentPage: document.getElementById('lblEventsCurrentPage'),
+      btnEventsNextPage: document.getElementById('btnEventsNextPage'),
+      btnEventsLastPage: document.getElementById('btnEventsLastPage'),
       sitesGridContainer: document.getElementById('sitesGridContainer'),
       simSiteSelect: document.getElementById('simSiteSelect'),
       simEventType: document.getElementById('simEventType'),
@@ -1896,6 +1942,19 @@
         });
         if (currentSelected) elements.simSiteSelect.value = currentSelected;
 
+        // Populate Events Log Site Filter Dropdown
+        if (elements.logSiteFilter) {
+          const currentSiteFilter = elements.logSiteFilter.value;
+          elements.logSiteFilter.innerHTML = '<option value="ALL">All Child Sites</option>';
+          data.sites.forEach(site => {
+            const opt = document.createElement('option');
+            opt.value = site.key;
+            opt.textContent = `${site.key} — ${site.name}`;
+            elements.logSiteFilter.appendChild(opt);
+          });
+          if (currentSiteFilter) elements.logSiteFilter.value = currentSiteFilter;
+        }
+
         // Render Sites Cards
         elements.sitesGridContainer.innerHTML = '';
         data.sites.forEach(site => {
@@ -1988,15 +2047,33 @@
       }
     }
 
-    // Load Events Log
+    // Load Events Log with pagination and filters
     async function fetchEvents() {
       try {
-        const res = await authFetch('/api/v1/dashboard/events?limit=50');
+        const status = elements.logStatusFilter ? elements.logStatusFilter.value : 'ALL';
+        const site = elements.logSiteFilter ? elements.logSiteFilter.value : 'ALL';
+        const search = elements.logSearchInput ? elements.logSearchInput.value.trim() : '';
+        const page = state.eventsPage || 1;
+        const limit = state.eventsLimit || 25;
+
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: String(limit),
+        });
+        if (status && status !== 'ALL') params.set('status', status);
+        if (site && site !== 'ALL') params.set('site', site);
+        if (search) params.set('search', search);
+
+        const res = await authFetch(`/api/v1/dashboard/events?${params.toString()}`);
         const data = await res.json();
         if (!data || !data.events) return;
 
         state.events = data.events;
-        elements.badgeEventsCount.textContent = data.count;
+        state.eventsTotal = data.total != null ? data.total : data.events.length;
+        state.eventsTotalPages = data.totalPages != null ? data.totalPages : Math.max(1, Math.ceil(state.eventsTotal / limit));
+        state.eventsPage = data.page != null ? data.page : page;
+
+        elements.badgeEventsCount.textContent = state.eventsTotal;
         renderEventsTable();
         updateQuickRefList();
       } catch (err) {
@@ -2005,20 +2082,47 @@
     }
 
     function renderEventsTable() {
-      const filter = elements.logStatusFilter.value;
-      const search = elements.logSearchInput.value.toLowerCase().trim();
+      const filter = elements.logStatusFilter ? elements.logStatusFilter.value : 'ALL';
+      const site = elements.logSiteFilter ? elements.logSiteFilter.value : 'ALL';
+      const search = elements.logSearchInput ? elements.logSearchInput.value.toLowerCase().trim() : '';
 
       const filtered = state.events.filter(ev => {
-        if (filter !== 'ALL' && ev.status !== filter) return false;
+        if (filter !== 'ALL') {
+          const evStatus = (ev.status || '').toUpperCase();
+          if (filter === 'SUCCESS' || filter === 'FORWARDED') {
+            if (evStatus !== 'SUCCESS' && evStatus !== 'FORWARDED') return false;
+          } else if (evStatus !== filter.toUpperCase()) {
+            return false;
+          }
+        }
+        if (site !== 'ALL' && ev.siteKey !== site) return false;
         if (search) {
           const matchEvent = (ev.eventType || '').toLowerCase().includes(search);
+          const matchKey = (ev.eventKey || '').toLowerCase().includes(search);
           const matchRef = (ev.reference || '').toLowerCase().includes(search);
           const matchSite = (ev.siteKey || '').toLowerCase().includes(search);
           const matchErr = (ev.error || '').toLowerCase().includes(search);
-          if (!matchEvent && !matchRef && !matchSite && !matchErr) return false;
+          const matchCorr = (ev.correlationId || '').toLowerCase().includes(search);
+          const matchId = (ev.id || '').toLowerCase().includes(search);
+          const matchUrl = (ev.targetUrl || '').toLowerCase().includes(search);
+          if (!matchEvent && !matchKey && !matchRef && !matchSite && !matchErr && !matchCorr && !matchId && !matchUrl) return false;
         }
         return true;
       });
+
+      // Update Pagination Controls
+      if (elements.lblEventsPaginationInfo) {
+        const start = state.eventsTotal > 0 ? (state.eventsPage - 1) * state.eventsLimit + 1 : 0;
+        const end = Math.min(state.eventsPage * state.eventsLimit, state.eventsTotal);
+        elements.lblEventsPaginationInfo.textContent = `Showing ${start}–${end} of ${state.eventsTotal} events`;
+      }
+      if (elements.lblEventsCurrentPage) {
+        elements.lblEventsCurrentPage.textContent = `Page ${state.eventsPage} of ${state.eventsTotalPages}`;
+      }
+      if (elements.btnEventsFirstPage) elements.btnEventsFirstPage.disabled = state.eventsPage <= 1;
+      if (elements.btnEventsPrevPage) elements.btnEventsPrevPage.disabled = state.eventsPage <= 1;
+      if (elements.btnEventsNextPage) elements.btnEventsNextPage.disabled = state.eventsPage >= state.eventsTotalPages;
+      if (elements.btnEventsLastPage) elements.btnEventsLastPage.disabled = state.eventsPage >= state.eventsTotalPages;
 
       if (filtered.length === 0) {
         elements.eventsTableBody.innerHTML = `
@@ -2036,12 +2140,13 @@
         const tr = document.createElement('tr');
         
         let statusBadgeClass = 'badge-queued';
-        if (ev.status === 'SUCCESS') statusBadgeClass = 'badge-success';
-        else if (ev.status === 'PROCESSING') statusBadgeClass = 'badge-processing';
-        else if (ev.status === 'RETRYING') statusBadgeClass = 'badge-retrying';
-        else if (ev.status === 'DEAD_LETTER') statusBadgeClass = 'badge-deadletter';
-        else if (ev.status === 'DUPLICATE') statusBadgeClass = 'badge-duplicate';
-        else if (ev.status === 'UNROUTABLE') statusBadgeClass = 'badge-unroutable';
+        const stUpper = (ev.status || '').toUpperCase();
+        if (stUpper === 'SUCCESS' || stUpper === 'FORWARDED') statusBadgeClass = 'badge-success';
+        else if (stUpper === 'PROCESSING') statusBadgeClass = 'badge-processing';
+        else if (stUpper === 'RETRYING') statusBadgeClass = 'badge-retrying';
+        else if (stUpper === 'DEAD_LETTER') statusBadgeClass = 'badge-deadletter';
+        else if (stUpper === 'DUPLICATE') statusBadgeClass = 'badge-duplicate';
+        else if (stUpper === 'UNROUTABLE') statusBadgeClass = 'badge-unroutable';
 
         const latencyText = ev.durationMs != null ? `${ev.durationMs}ms` : '-';
         const attemptsText = ev.status === 'DUPLICATE' || ev.status === 'UNROUTABLE'
@@ -2368,8 +2473,72 @@
       copyToClipboard(elements.simCurlSnippet.textContent, 'cURL command copied to clipboard');
     });
 
-    elements.logStatusFilter.addEventListener('change', renderEventsTable);
-    elements.logSearchInput.addEventListener('input', renderEventsTable);
+    let logSearchTimeout = null;
+    elements.logStatusFilter.addEventListener('change', () => {
+      state.eventsPage = 1;
+      fetchEvents();
+    });
+    if (elements.logSiteFilter) {
+      elements.logSiteFilter.addEventListener('change', () => {
+        state.eventsPage = 1;
+        fetchEvents();
+      });
+    }
+    elements.logSearchInput.addEventListener('input', () => {
+      if (logSearchTimeout) clearTimeout(logSearchTimeout);
+      logSearchTimeout = setTimeout(() => {
+        state.eventsPage = 1;
+        fetchEvents();
+      }, 300);
+    });
+    if (elements.btnResetEventFilters) {
+      elements.btnResetEventFilters.addEventListener('click', () => {
+        elements.logStatusFilter.value = 'ALL';
+        if (elements.logSiteFilter) elements.logSiteFilter.value = 'ALL';
+        elements.logSearchInput.value = '';
+        state.eventsPage = 1;
+        fetchEvents();
+      });
+    }
+    if (elements.selectEventsPageSize) {
+      elements.selectEventsPageSize.addEventListener('change', () => {
+        state.eventsLimit = Number(elements.selectEventsPageSize.value);
+        state.eventsPage = 1;
+        fetchEvents();
+      });
+    }
+    if (elements.btnEventsFirstPage) {
+      elements.btnEventsFirstPage.addEventListener('click', () => {
+        if (state.eventsPage > 1) {
+          state.eventsPage = 1;
+          fetchEvents();
+        }
+      });
+    }
+    if (elements.btnEventsPrevPage) {
+      elements.btnEventsPrevPage.addEventListener('click', () => {
+        if (state.eventsPage > 1) {
+          state.eventsPage--;
+          fetchEvents();
+        }
+      });
+    }
+    if (elements.btnEventsNextPage) {
+      elements.btnEventsNextPage.addEventListener('click', () => {
+        if (state.eventsPage < state.eventsTotalPages) {
+          state.eventsPage++;
+          fetchEvents();
+        }
+      });
+    }
+    if (elements.btnEventsLastPage) {
+      elements.btnEventsLastPage.addEventListener('click', () => {
+        if (state.eventsPage < state.eventsTotalPages) {
+          state.eventsPage = state.eventsTotalPages;
+          fetchEvents();
+        }
+      });
+    }
 
     elements.btnRefresh.addEventListener('click', async () => {
       await Promise.all([fetchStats(), fetchSites(), fetchEvents()]);

@@ -446,15 +446,64 @@ export class PostgresIdempotencyStore {
     }
   }
 
-  async getRecentEvents(limit = 50) {
+  async getEvents({ page = 1, limit = 25, status = 'ALL', search = '', siteKey = '' } = {}) {
     const ready = await this.ensureTable();
-    if (!ready || this.dbUnavailable) return [];
+    if (!ready || this.dbUnavailable) return null;
     try {
-      const res = await this.pool.query(
-        'SELECT * FROM event_logs ORDER BY created_at DESC LIMIT $1',
-        [limit]
+      const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+      const parsedLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 25));
+      const offset = (parsedPage - 1) * parsedLimit;
+
+      const whereClauses = [];
+      const values = [];
+      let paramIdx = 1;
+
+      if (status && status !== 'ALL') {
+        const upper = status.toUpperCase();
+        if (upper === 'SUCCESS' || upper === 'FORWARDED') {
+          whereClauses.push(`(UPPER(status) = 'SUCCESS' OR UPPER(status) = 'FORWARDED')`);
+        } else {
+          whereClauses.push(`UPPER(status) = $${paramIdx++}`);
+          values.push(upper);
+        }
+      }
+
+      if (siteKey && siteKey !== 'ALL') {
+        whereClauses.push(`site_key = $${paramIdx++}`);
+        values.push(siteKey);
+      }
+
+      if (search && search.trim()) {
+        const term = `%${search.trim().toLowerCase()}%`;
+        whereClauses.push(`(
+          LOWER(reference) LIKE $${paramIdx} OR
+          LOWER(event_key) LIKE $${paramIdx} OR
+          LOWER(event_type) LIKE $${paramIdx} OR
+          LOWER(COALESCE(site_key, '')) LIKE $${paramIdx} OR
+          LOWER(COALESCE(error, '')) LIKE $${paramIdx} OR
+          LOWER(COALESCE(correlation_id, '')) LIKE $${paramIdx} OR
+          LOWER(COALESCE(target_url, '')) LIKE $${paramIdx} OR
+          LOWER(id) LIKE $${paramIdx}
+        )`);
+        values.push(term);
+        paramIdx++;
+      }
+
+      const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+      const countRes = await this.pool.query(
+        `SELECT COUNT(*) AS total FROM event_logs ${whereSql}`,
+        values
       );
-      return res.rows.map(r => ({
+      const total = parseInt(countRes.rows[0]?.total || '0', 10);
+
+      const queryValues = [...values, parsedLimit, offset];
+      const dataRes = await this.pool.query(
+        `SELECT * FROM event_logs ${whereSql} ORDER BY created_at DESC LIMIT $${paramIdx++} OFFSET $${paramIdx++}`,
+        queryValues
+      );
+
+      const events = dataRes.rows.map(r => ({
         id: r.id,
         eventKey: r.event_key,
         eventType: r.event_type,
@@ -470,10 +519,23 @@ export class PostgresIdempotencyStore {
         createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
         updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
       }));
+
+      return {
+        events,
+        total,
+        page: parsedPage,
+        limit: parsedLimit,
+        totalPages: Math.max(1, Math.ceil(total / parsedLimit)),
+      };
     } catch (err) {
-      logger.warn({ err: err.message }, 'Postgres getRecentEvents failed');
-      return [];
+      logger.warn({ err: err.message }, 'Postgres getEvents failed');
+      return null;
     }
+  }
+
+  async getRecentEvents(limit = 50) {
+    const res = await this.getEvents({ page: 1, limit });
+    return res ? res.events : [];
   }
 
   async clear() {
@@ -516,7 +578,7 @@ export class QueueService extends EventEmitter {
 
     this.jobs = []; // In-memory queue storage
     this.recentEvents = []; // In-memory circular buffer of recent webhook dispatches / events
-    this.maxRecentEvents = options.maxRecentEvents || 100;
+    this.maxRecentEvents = options.maxRecentEvents || 1000;
     this.timer = null;
     this.isProcessing = false;
     this.forwarder = null; // Injected dispatcher function
@@ -705,6 +767,71 @@ export class QueueService extends EventEmitter {
       createdAt: nowIso,
       updatedAt: nowIso,
     });
+  }
+
+  getEvents({ page = 1, limit = 25, status = 'ALL', search = '', siteKey = '' } = {}) {
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const parsedLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 25));
+    const term = (search || '').toLowerCase().trim();
+    const upperStatus = (status || 'ALL').toUpperCase();
+
+    const filtered = this.recentEvents.filter(ev => {
+      // Status filter
+      if (upperStatus !== 'ALL') {
+        const evStatus = (ev.status || '').toUpperCase();
+        if (upperStatus === 'SUCCESS' || upperStatus === 'FORWARDED') {
+          if (evStatus !== 'SUCCESS' && evStatus !== 'FORWARDED') return false;
+        } else if (evStatus !== upperStatus) {
+          return false;
+        }
+      }
+
+      // Site filter
+      if (siteKey && siteKey !== 'ALL') {
+        if (ev.siteKey !== siteKey) return false;
+      }
+
+      // Search filter
+      if (term) {
+        const matchEvent = (ev.eventType || '').toLowerCase().includes(term);
+        const matchKey = (ev.eventKey || '').toLowerCase().includes(term);
+        const matchRef = (ev.reference || '').toLowerCase().includes(term);
+        const matchSite = (ev.siteKey || '').toLowerCase().includes(term);
+        const matchErr = (ev.error || '').toLowerCase().includes(term);
+        const matchCorr = (ev.correlationId || '').toLowerCase().includes(term);
+        const matchId = (ev.id || '').toLowerCase().includes(term);
+        const matchUrl = (ev.targetUrl || '').toLowerCase().includes(term);
+        if (!matchEvent && !matchKey && !matchRef && !matchSite && !matchErr && !matchCorr && !matchId && !matchUrl) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    const total = filtered.length;
+    const offset = (parsedPage - 1) * parsedLimit;
+    const events = filtered.slice(offset, offset + parsedLimit);
+
+    return {
+      events,
+      total,
+      page: parsedPage,
+      limit: parsedLimit,
+      totalPages: Math.max(1, Math.ceil(total / parsedLimit)),
+    };
+  }
+
+  async fetchEvents(options = {}) {
+    if (this.idempotencyStore && typeof this.idempotencyStore.getEvents === 'function') {
+      try {
+        const res = await this.idempotencyStore.getEvents(options);
+        if (res && Array.isArray(res.events)) return res;
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Failed to fetch events from store, falling back to memory');
+      }
+    }
+    return this.getEvents(options);
   }
 
   getRecentEvents(limit = 50) {

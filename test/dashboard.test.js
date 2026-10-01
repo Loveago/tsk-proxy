@@ -339,6 +339,100 @@ describe('Web UI Dashboard & Simulator Endpoints', () => {
       assert.equal(found.siteKey, 'lufak');
     });
 
+    describe('GET /api/v1/dashboard/events pagination and filtering', () => {
+      beforeEach(async () => {
+        queueService.recordExternalEvent({
+          eventKey: 'charge.success:ref_page_001',
+          eventType: 'charge.success',
+          reference: 'ref_page_001',
+          siteKey: 'lufak',
+          status: 'SUCCESS',
+        });
+        queueService.recordExternalEvent({
+          eventKey: 'charge.success:ref_page_002',
+          eventType: 'charge.success',
+          reference: 'ref_page_002',
+          siteKey: 'saas',
+          status: 'SUCCESS',
+        });
+        queueService.recordExternalEvent({
+          eventKey: 'charge.success:ref_page_003',
+          eventType: 'charge.success',
+          reference: 'ref_page_003',
+          siteKey: 'lufak',
+          status: 'UNROUTABLE',
+        });
+        queueService.recordExternalEvent({
+          eventKey: 'subscription.create:ref_page_004',
+          eventType: 'subscription.create',
+          reference: 'ref_page_004',
+          siteKey: 'saas',
+          status: 'DUPLICATE',
+        });
+      });
+
+      it('returns pagination metadata (page, limit, total, totalPages)', async () => {
+        const res = await authReq
+          .get('/api/v1/dashboard/events?page=1&limit=2')
+          .expect(200);
+
+        assert.equal(res.body.status, true);
+        assert.equal(res.body.page, 1);
+        assert.equal(res.body.limit, 2);
+        assert.equal(res.body.total, 4);
+        assert.equal(res.body.totalPages, 2);
+        assert.equal(res.body.events.length, 2);
+      });
+
+      it('navigates to page 2 without overlapping items', async () => {
+        const page1 = await authReq
+          .get('/api/v1/dashboard/events?page=1&limit=2')
+          .expect(200);
+        const page2 = await authReq
+          .get('/api/v1/dashboard/events?page=2&limit=2')
+          .expect(200);
+
+        assert.equal(page1.body.events.length, 2);
+        assert.equal(page2.body.events.length, 2);
+        const page1Refs = page1.body.events.map(e => e.reference);
+        const page2Refs = page2.body.events.map(e => e.reference);
+        for (const r of page1Refs) {
+          assert.ok(!page2Refs.includes(r), `Page 2 should not contain ${r} from Page 1`);
+        }
+      });
+
+      it('filters events by status (SUCCESS matches SUCCESS)', async () => {
+        const res = await authReq
+          .get('/api/v1/dashboard/events?status=SUCCESS')
+          .expect(200);
+
+        assert.equal(res.body.total, 2);
+        for (const ev of res.body.events) {
+          assert.equal(ev.status, 'SUCCESS');
+        }
+      });
+
+      it('filters events by siteKey', async () => {
+        const res = await authReq
+          .get('/api/v1/dashboard/events?site=saas')
+          .expect(200);
+
+        assert.equal(res.body.total, 2);
+        for (const ev of res.body.events) {
+          assert.equal(ev.siteKey, 'saas');
+        }
+      });
+
+      it('filters events by search query', async () => {
+        const res = await authReq
+          .get('/api/v1/dashboard/events?search=ref_page_003')
+          .expect(200);
+
+        assert.equal(res.body.total, 1);
+        assert.equal(res.body.events[0].reference, 'ref_page_003');
+      });
+    });
+
     it('simulates webhook routing via metadata.origin_site', async () => {
       const res = await authReq
         .post('/api/v1/dashboard/simulate')

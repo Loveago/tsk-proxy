@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Activity,
   Server,
@@ -37,6 +37,12 @@ import {
   User,
   Key,
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  X,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -73,6 +79,12 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [eventsFilter, setEventsFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [siteFilter, setSiteFilter] = useState('ALL');
+  const [eventsPage, setEventsPage] = useState(1);
+  const [eventsPageSize, setEventsPageSize] = useState(25);
+  const [totalEvents, setTotalEvents] = useState(0);
+  const [totalEventPages, setTotalEventPages] = useState(1);
+  const [eventsLoading, setEventsLoading] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
 
   // Sites
@@ -206,29 +218,72 @@ export default function Dashboard() {
     return res;
   }, []);
 
+  const eventsFilterRef = useRef(eventsFilter);
+  eventsFilterRef.current = eventsFilter;
+  const statusFilterRef = useRef(statusFilter);
+  statusFilterRef.current = statusFilter;
+  const siteFilterRef = useRef(siteFilter);
+  siteFilterRef.current = siteFilter;
+  const eventsPageRef = useRef(eventsPage);
+  eventsPageRef.current = eventsPage;
+  const eventsPageSizeRef = useRef(eventsPageSize);
+  eventsPageSizeRef.current = eventsPageSize;
+
+  // Fetch events with server-side pagination & filter support
+  const fetchEventsData = useCallback(async (opts = {}) => {
+    const pageToFetch = opts.page ?? eventsPageRef.current;
+    const limitToFetch = opts.limit ?? eventsPageSizeRef.current;
+    const statusToFetch = opts.status ?? statusFilterRef.current;
+    const siteToFetch = opts.site ?? siteFilterRef.current;
+    const searchToFetch = opts.search !== undefined ? opts.search : eventsFilterRef.current;
+
+    try {
+      setEventsLoading(true);
+      const params = new URLSearchParams({
+        page: String(pageToFetch),
+        limit: String(limitToFetch),
+      });
+      if (statusToFetch && statusToFetch !== 'ALL') {
+        params.set('status', statusToFetch);
+      }
+      if (siteToFetch && siteToFetch !== 'ALL') {
+        params.set('site', siteToFetch);
+      }
+      if (searchToFetch && searchToFetch.trim()) {
+        params.set('search', searchToFetch.trim());
+      }
+
+      const res = await authFetch(`/api/v1/dashboard/events?${params.toString()}`);
+      if (res.ok) {
+        const json = await res.json();
+        setEvents(json.events || []);
+        if (json.total != null) setTotalEvents(json.total);
+        if (json.totalPages != null) setTotalEventPages(json.totalPages);
+        if (json.page != null) setEventsPage(json.page);
+      }
+    } catch (err) {
+      console.error('Failed to fetch events telemetry:', err);
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [authFetch]);
+
   // Fetch stats & events
   const fetchStatsAndEvents = useCallback(async () => {
     try {
-      const [statsRes, eventsRes] = await Promise.all([
-        authFetch('/api/v1/dashboard/stats'),
-        authFetch('/api/v1/dashboard/events?limit=100'),
-      ]);
-
+      const statsRes = await authFetch('/api/v1/dashboard/stats');
       if (statsRes.ok) {
         const statsJson = await statsRes.json();
         setStats(statsJson);
       }
-      if (eventsRes.ok) {
-        const eventsJson = await eventsRes.json();
-        setEvents(eventsJson.events || []);
-      }
+      await fetchEventsData();
       setError(null);
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
       setLoading(false);
     }
-  }, [authFetch]);
+  }, [authFetch, fetchEventsData]);
 
   // Fetch sites
   const fetchSites = useCallback(async () => {
@@ -349,7 +404,35 @@ export default function Dashboard() {
                 nextList[idx] = evt;
                 return nextList;
               }
-              return [evt, ...prev].slice(0, 100);
+              // Check if matches active filters before prepending
+              const upper = (statusFilterRef.current || 'ALL').toUpperCase();
+              if (upper !== 'ALL') {
+                const evStatus = (evt.status || '').toUpperCase();
+                if (upper === 'SUCCESS' || upper === 'FORWARDED') {
+                  if (evStatus !== 'SUCCESS' && evStatus !== 'FORWARDED') return prev;
+                } else if (evStatus !== upper) {
+                  return prev;
+                }
+              }
+              if (siteFilterRef.current && siteFilterRef.current !== 'ALL' && evt.siteKey !== siteFilterRef.current) {
+                return prev;
+              }
+              if (eventsFilterRef.current && eventsFilterRef.current.trim()) {
+                const term = eventsFilterRef.current.trim().toLowerCase();
+                const match = (evt.eventType || '').toLowerCase().includes(term) ||
+                  (evt.eventKey || '').toLowerCase().includes(term) ||
+                  (evt.reference || '').toLowerCase().includes(term) ||
+                  (evt.siteKey || '').toLowerCase().includes(term) ||
+                  (evt.error || '').toLowerCase().includes(term) ||
+                  (evt.correlationId || '').toLowerCase().includes(term) ||
+                  (evt.id || '').toLowerCase().includes(term);
+                if (!match) return prev;
+              }
+              setTotalEvents(t => t + 1);
+              if (eventsPageRef.current === 1) {
+                return [evt, ...prev].slice(0, eventsPageSizeRef.current);
+              }
+              return prev;
             });
           }
         } catch {}
@@ -765,23 +848,85 @@ export default function Dashboard() {
     showToastMsg('Signed out of dashboard');
   };
 
+  // Debounce search filter input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchEventsData({ search: eventsFilter, page: 1 });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [eventsFilter, fetchEventsData]);
+
+  const handleStatusFilterChange = (st) => {
+    setStatusFilter(st);
+    setEventsPage(1);
+    fetchEventsData({ status: st, page: 1 });
+  };
+
+  const handleSiteFilterChange = (site) => {
+    setSiteFilter(site);
+    setEventsPage(1);
+    fetchEventsData({ site, page: 1 });
+  };
+
+  const handlePageChange = (newPage) => {
+    const target = Math.max(1, Math.min(totalEventPages, newPage));
+    setEventsPage(target);
+    fetchEventsData({ page: target });
+  };
+
+  const handlePageSizeChange = (newSize) => {
+    setEventsPageSize(newSize);
+    setEventsPage(1);
+    fetchEventsData({ limit: newSize, page: 1 });
+  };
+
+  const handleResetFilters = () => {
+    setEventsFilter('');
+    setStatusFilter('ALL');
+    setSiteFilter('ALL');
+    setEventsPage(1);
+    fetchEventsData({ search: '', status: 'ALL', site: 'ALL', page: 1 });
+  };
+
   // Filtered Events
   const filteredEvents = useMemo(() => {
+    const term = eventsFilter.trim().toLowerCase();
+    const upperStatus = statusFilter.toUpperCase();
+
     return events.filter(ev => {
-      const matchesSearch =
-        !eventsFilter ||
-        (ev.eventKey && ev.eventKey.toLowerCase().includes(eventsFilter.toLowerCase())) ||
-        (ev.reference && ev.reference.toLowerCase().includes(eventsFilter.toLowerCase())) ||
-        (ev.siteKey && ev.siteKey.toLowerCase().includes(eventsFilter.toLowerCase())) ||
-        (ev.eventType && ev.eventType.toLowerCase().includes(eventsFilter.toLowerCase()));
+      // Status matching
+      if (upperStatus !== 'ALL') {
+        const evStatus = (ev.status || '').toUpperCase();
+        if (upperStatus === 'SUCCESS' || upperStatus === 'FORWARDED') {
+          if (evStatus !== 'SUCCESS' && evStatus !== 'FORWARDED') return false;
+        } else if (evStatus !== upperStatus) {
+          return false;
+        }
+      }
 
-      const matchesStatus =
-        statusFilter === 'ALL' ||
-        (ev.status && ev.status.toUpperCase() === statusFilter);
+      // Site matching
+      if (siteFilter !== 'ALL') {
+        if (ev.siteKey !== siteFilter) return false;
+      }
 
-      return matchesSearch && matchesStatus;
+      // Search matching
+      if (term) {
+        const matchEvent = (ev.eventType || '').toLowerCase().includes(term);
+        const matchKey = (ev.eventKey || '').toLowerCase().includes(term);
+        const matchRef = (ev.reference || '').toLowerCase().includes(term);
+        const matchSite = (ev.siteKey || '').toLowerCase().includes(term);
+        const matchErr = (ev.error || '').toLowerCase().includes(term);
+        const matchCorr = (ev.correlationId || '').toLowerCase().includes(term);
+        const matchId = (ev.id || '').toLowerCase().includes(term);
+        const matchUrl = (ev.targetUrl || '').toLowerCase().includes(term);
+        if (!matchEvent && !matchKey && !matchRef && !matchSite && !matchErr && !matchCorr && !matchId && !matchUrl) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [events, eventsFilter, statusFilter]);
+  }, [events, eventsFilter, statusFilter, siteFilter]);
 
   const copyToClipboard = async (text, label) => {
     try {
@@ -917,9 +1062,9 @@ export default function Dashboard() {
                 >
                   <Icon className={`w-4 h-4 ${isActive ? 'text-cyan-400' : 'text-slate-400'}`} />
                   <span>{tab.label}</span>
-                  {tab.id === 'events' && events.length > 0 && (
+                  {tab.id === 'events' && (totalEvents > 0 || events.length > 0) && (
                     <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-300 font-mono">
-                      {events.length}
+                      {totalEvents || events.length}
                     </span>
                   )}
                   {tab.id === 'sites' && sites.length > 0 && (
@@ -1451,32 +1596,104 @@ export default function Dashboard() {
         {activeTab === 'events' && (
           <div className="space-y-4">
             {/* Filter Bar */}
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-3">
-              <div className="relative w-full md:w-96">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Filter by reference, site, or event type..."
-                  value={eventsFilter}
-                  onChange={e => setEventsFilter(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                />
+            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                {/* Search input with clear button */}
+                <div className="relative w-full md:w-80">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search reference, site, event, error..."
+                    value={eventsFilter}
+                    onChange={e => setEventsFilter(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                  {eventsFilter && (
+                    <button
+                      onClick={() => {
+                        setEventsFilter('');
+                        handleResetFilters();
+                      }}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-200"
+                      title="Clear search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Site selector dropdown & action buttons */}
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <span className="text-xs text-slate-400 whitespace-nowrap hidden sm:inline">Site:</span>
+                  <select
+                    value={siteFilter}
+                    onChange={e => handleSiteFilterChange(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 px-3 py-2 focus:outline-none focus:border-cyan-500 w-full sm:w-auto"
+                  >
+                    <option value="ALL">All Child Sites</option>
+                    {sites.map(s => (
+                      <option key={s.key} value={s.key}>
+                        {s.name ? `${s.name} (${s.key})` : s.key}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Reset filters button */}
+                  {(eventsFilter || statusFilter !== 'ALL' || siteFilter !== 'ALL') && (
+                    <button
+                      onClick={handleResetFilters}
+                      className="px-2.5 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                      title="Reset all filters"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset</span>
+                    </button>
+                  )}
+
+                  {/* Refresh button */}
+                  <button
+                    onClick={() => fetchEventsData()}
+                    disabled={eventsLoading}
+                    className="p-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50"
+                    title="Refresh events list"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${eventsLoading ? 'animate-spin text-cyan-400' : ''}`} />
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
-                {['ALL', 'QUEUED', 'RETRYING', 'FORWARDED', 'DUPLICATE', 'DEAD_LETTER', 'UNROUTABLE'].map(st => (
-                  <button
-                    key={st}
-                    onClick={() => setStatusFilter(st)}
-                    className={`px-2.5 py-1 text-xs rounded-lg font-medium whitespace-nowrap transition-colors ${
-                      statusFilter === st
-                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                        : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'
-                    }`}
-                  >
-                    {st}
-                  </button>
-                ))}
+              {/* Status Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <span className="text-xs text-slate-400 whitespace-nowrap mr-1 flex items-center gap-1">
+                  <Filter className="w-3 h-3" /> Status:
+                </span>
+                {[
+                  { id: 'ALL', label: 'All Statuses' },
+                  { id: 'SUCCESS', label: 'Delivered / Success' },
+                  { id: 'PROCESSING', label: 'Processing' },
+                  { id: 'QUEUED', label: 'Queued' },
+                  { id: 'RETRYING', label: 'Retrying' },
+                  { id: 'DUPLICATE', label: 'Duplicate' },
+                  { id: 'DEAD_LETTER', label: 'Dead Letter' },
+                  { id: 'UNROUTABLE', label: 'Unroutable' },
+                ].map(st => {
+                  const isActive =
+                    statusFilter === st.id ||
+                    (st.id === 'SUCCESS' && statusFilter === 'FORWARDED');
+                  return (
+                    <button
+                      key={st.id}
+                      onClick={() => handleStatusFilterChange(st.id)}
+                      className={`px-2.5 py-1 text-xs rounded-lg font-medium whitespace-nowrap transition-colors ${
+                        isActive
+                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                          : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1592,7 +1809,114 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Event Detail Modal */}
+            {/* Pagination Controls Bar */}
+            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+              {/* Left: Summary and Page Size */}
+              <div className="flex items-center gap-3">
+                <span>
+                  Showing{' '}
+                  <strong className="text-slate-200">
+                    {totalEvents > 0 ? (eventsPage - 1) * eventsPageSize + 1 : 0}
+                  </strong>{' '}
+                  to{' '}
+                  <strong className="text-slate-200">
+                    {Math.min(eventsPage * eventsPageSize, totalEvents)}
+                  </strong>{' '}
+                  of <strong className="text-slate-200">{totalEvents}</strong> events
+                </span>
+
+                <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
+                  <span>Show</span>
+                  <select
+                    value={eventsPageSize}
+                    onChange={e => handlePageSizeChange(Number(e.target.value))}
+                    className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-cyan-500 text-xs"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <span>/ page</span>
+                </div>
+              </div>
+
+              {/* Right: Page Navigation */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => handlePageChange(1)}
+                  disabled={eventsPage <= 1}
+                  className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="First page"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handlePageChange(eventsPage - 1)}
+                  disabled={eventsPage <= 1}
+                  className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1 px-1">
+                  {Array.from({ length: totalEventPages }, (_, i) => i + 1)
+                    .filter(p => {
+                      if (totalEventPages <= 7) return true;
+                      if (p === 1 || p === totalEventPages) return true;
+                      return Math.abs(p - eventsPage) <= 1;
+                    })
+                    .reduce((acc, p, idx, arr) => {
+                      if (idx > 0 && p - arr[idx - 1] > 1) {
+                        acc.push(-1 * p); // gap marker
+                      }
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map(p => {
+                      if (p < 0) {
+                        return (
+                          <span key={`gap-${p}`} className="px-1 text-slate-600">
+                            …
+                          </span>
+                        );
+                      }
+                      const isCurrent = p === eventsPage;
+                      return (
+                        <button
+                          key={p}
+                          onClick={() => handlePageChange(p)}
+                          className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                            isCurrent
+                              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold'
+                              : 'bg-slate-950 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-slate-200'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+                </div>
+
+                <button
+                  onClick={() => handlePageChange(eventsPage + 1)}
+                  disabled={eventsPage >= totalEventPages}
+                  className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Next page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handlePageChange(totalEventPages)}
+                  disabled={eventsPage >= totalEventPages}
+                  className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Last page"
+                >
+                  <ChevronsRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
             {selectedEvent && (
               <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">

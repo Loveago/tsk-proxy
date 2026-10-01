@@ -697,17 +697,37 @@ router.post('/sites/:key/ping', async (req, res) => {
 
 /**
  * GET /api/v1/dashboard/events
- * Recent webhook event dispatch log
+ * Webhook event dispatch log with pagination and filter support
  */
 router.get('/events', async (req, res) => {
-  const limit = req.query.limit ? Math.min(parseInt(req.query.limit, 10) || 50, 100) : 50;
-  const events = typeof queueService.fetchRecentEvents === 'function'
-    ? await queueService.fetchRecentEvents(limit)
-    : queueService.getRecentEvents(limit);
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = req.query.limit ? Math.min(Math.max(1, parseInt(req.query.limit, 10) || 25), 100) : 25;
+  const status = (req.query.status || 'ALL').trim();
+  const search = (req.query.search || '').trim();
+  const siteKey = (req.query.site || req.query.siteKey || '').trim();
+
+  let result;
+  if (typeof queueService.fetchEvents === 'function') {
+    result = await queueService.fetchEvents({ page, limit, status, search, siteKey });
+  } else if (typeof queueService.fetchRecentEvents === 'function') {
+    const events = await queueService.fetchRecentEvents(limit);
+    result = { events, total: events.length, page: 1, limit, totalPages: 1 };
+  } else {
+    const events = queueService.getRecentEvents(limit);
+    result = { events, total: events.length, page: 1, limit, totalPages: 1 };
+  }
+
+  const events = result.events || [];
+  const total = result.total != null ? result.total : events.length;
+  const totalPages = result.totalPages != null ? result.totalPages : Math.max(1, Math.ceil(total / limit));
 
   res.json({
     status: true,
     count: events.length,
+    total,
+    page: result.page || page,
+    limit: result.limit || limit,
+    totalPages,
     events,
   });
 });
