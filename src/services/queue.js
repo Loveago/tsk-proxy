@@ -99,6 +99,11 @@ class MemoryIdempotencyStore {
     }
   }
 
+  async cleanupOldLogs() {
+    this.cleanup();
+    return { deletedLogs: 0, deletedIdempotency: 0 };
+  }
+
   async clear() {
     this.store.clear();
   }
@@ -185,6 +190,17 @@ class SqliteIdempotencyStore {
     stmt.run(status, now, eventKey);
   }
 
+  async cleanupOldLogs() {
+    try {
+      const now = Date.now();
+      const stmt = this.db.prepare('DELETE FROM idempotency WHERE expires_at < ?');
+      const info = stmt.run(now);
+      return { deletedLogs: 0, deletedIdempotency: info?.changes || 0 };
+    } catch {
+      return { deletedLogs: 0, deletedIdempotency: 0 };
+    }
+  }
+
   async clear() {
     this.db.exec('DELETE FROM idempotency');
   }
@@ -240,6 +256,10 @@ class RedisIdempotencyStore {
     } catch (err) {
       logger.error({ err: err.message, eventKey }, 'Redis idempotency update status failed');
     }
+  }
+
+  async cleanupOldLogs() {
+    return { deletedLogs: 0, deletedIdempotency: 0 };
   }
 
   async clear() {
@@ -538,6 +558,38 @@ export class PostgresIdempotencyStore {
     return res ? res.events : [];
   }
 
+  async cleanupOldLogs(retentionDays = 30) {
+    const ready = await this.ensureTable();
+    let deletedLogs = 0;
+    let deletedIdempotency = 0;
+    if (!ready || this.dbUnavailable || !this.pool) {
+      return { deletedLogs: 0, deletedIdempotency: 0 };
+    }
+    try {
+      const parsedDays = Math.max(1, parseInt(retentionDays, 10) || 30);
+      const cutoffDate = new Date(Date.now() - parsedDays * 24 * 60 * 60 * 1000);
+      const resLogs = await this.pool.query(
+        'DELETE FROM event_logs WHERE created_at < $1',
+        [cutoffDate]
+      );
+      deletedLogs = resLogs.rowCount || 0;
+
+      const resIdemp = await this.pool.query(
+        'DELETE FROM idempotency WHERE expires_at < $1',
+        [Date.now()]
+      );
+      deletedIdempotency = resIdemp.rowCount || 0;
+
+      logger.info(
+        { deletedLogs, deletedIdempotency, retentionDays: parsedDays, cutoffDate },
+        'Postgres log retention cleanup completed'
+      );
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Postgres cleanupOldLogs failed');
+    }
+    return { deletedLogs, deletedIdempotency };
+  }
+
   async clear() {
     await this.memoryFallback.clear();
     if (this.dbUnavailable || !this.pool) return;
@@ -634,6 +686,14 @@ export class QueueService extends EventEmitter {
     this._customDatabaseUrl = val;
   }
 
+  get logRetentionDays() {
+    return this._customLogRetentionDays ?? config.proxy.logRetentionDays ?? 30;
+  }
+
+  set logRetentionDays(val) {
+    this._customLogRetentionDays = val;
+  }
+
   async reconfigure() {
     if (this.idempotencyStore && typeof this.idempotencyStore.close === 'function') {
       try {
@@ -684,10 +744,25 @@ export class QueueService extends EventEmitter {
   }
 
   start() {
-    if (this.timer) return;
-    this.timer = setInterval(() => this.processNextBatch(), this.pollIntervalMs);
-    if (this.timer.unref) this.timer.unref();
-    logger.info({ pollIntervalMs: this.pollIntervalMs }, 'Retry queue worker started');
+    if (!this.timer) {
+      this.timer = setInterval(() => this.processNextBatch(), this.pollIntervalMs);
+      if (this.timer.unref) this.timer.unref();
+      logger.info({ pollIntervalMs: this.pollIntervalMs }, 'Retry queue worker started');
+    }
+
+    // Periodic cleanup of logs older than retention period (default every 1 hour)
+    if (!this.cleanupTimer) {
+      this.cleanupIntervalMs = 60 * 60 * 1000; // 1 hour
+      this.cleanupTimer = setInterval(() => {
+        this.cleanupOldLogs().catch(err => {
+          logger.warn({ err: err.message }, 'Periodic log retention cleanup error');
+        });
+      }, this.cleanupIntervalMs);
+      if (this.cleanupTimer.unref) this.cleanupTimer.unref();
+
+      // Trigger initial sweep in background
+      this.cleanupOldLogs().catch(() => {});
+    }
   }
 
   stop() {
@@ -695,6 +770,10 @@ export class QueueService extends EventEmitter {
       clearInterval(this.timer);
       this.timer = null;
       logger.info('Retry queue worker stopped');
+    }
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
     }
   }
 
@@ -848,6 +927,49 @@ export class QueueService extends EventEmitter {
       }
     }
     return this.getRecentEvents(limit);
+  }
+
+  /**
+   * Prunes events older than the specified retention window (default 30 days)
+   * from both in-memory circular buffers and persistent stores (PostgreSQL / SQLite).
+   */
+  async cleanupOldLogs(customRetentionDays) {
+    const retentionDays = Math.max(1, parseInt(customRetentionDays ?? this.logRetentionDays, 10) || 30);
+    const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+
+    const initialMemoryCount = this.recentEvents.length;
+    this.recentEvents = this.recentEvents.filter(ev => {
+      const ts = ev.createdAt || ev.timestamp;
+      if (!ts) return true;
+      const time = new Date(ts).getTime();
+      return !Number.isNaN(time) ? time >= cutoffMs : true;
+    });
+    const memoryDeleted = initialMemoryCount - this.recentEvents.length;
+
+    let storeResult = { deletedLogs: 0, deletedIdempotency: 0 };
+    if (this.idempotencyStore && typeof this.idempotencyStore.cleanupOldLogs === 'function') {
+      try {
+        storeResult = await this.idempotencyStore.cleanupOldLogs(retentionDays);
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Store log retention cleanup failed');
+      }
+    }
+
+    const totalDeletedLogs = (storeResult?.deletedLogs || 0) + memoryDeleted;
+    const result = {
+      deletedLogs: totalDeletedLogs,
+      dbDeletedLogs: storeResult?.deletedLogs || 0,
+      memoryDeletedLogs: memoryDeleted,
+      deletedIdempotency: storeResult?.deletedIdempotency || 0,
+      retentionDays,
+    };
+
+    if (totalDeletedLogs > 0 || (storeResult?.deletedIdempotency || 0) > 0) {
+      logger.info(result, 'Auto-cleanup of event logs completed');
+      this.emit('stats', this.getMetrics());
+    }
+
+    return result;
   }
 
   /**
@@ -1151,6 +1273,9 @@ if (typeof onConfigUpdated === 'function') {
     }
     if (updatedKeys.REDIS_URL) {
       queueService._customRedisUrl = null;
+    }
+    if (updatedKeys.LOG_RETENTION_DAYS) {
+      queueService._customLogRetentionDays = null;
     }
 
     if (

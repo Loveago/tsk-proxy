@@ -86,6 +86,7 @@ export default function Dashboard() {
   const [totalEventPages, setTotalEventPages] = useState(1);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [purgingLogs, setPurgingLogs] = useState(false);
 
   // Sites
   const [sites, setSites] = useState([]);
@@ -123,6 +124,7 @@ export default function Dashboard() {
       sqliteDbPath: './data/proxy.db',
       redisUrl: 'redis://127.0.0.1:6379/0',
       idempotencyTtlSeconds: 86400,
+      logRetentionDays: 30,
     },
     notifications: {
       discordWebhookUrl: '',
@@ -673,6 +675,7 @@ export default function Dashboard() {
           sqliteDbPath: configData.proxy.sqliteDbPath,
           redisUrl: configData.proxy.redisUrl,
           idempotencyTtlSeconds: Number(configData.proxy.idempotencyTtlSeconds) || 86400,
+          logRetentionDays: Number(configData.proxy.logRetentionDays) || 30,
         },
         notifications: {
           discordWebhookUrl: configData.notifications.discordWebhookUrl,
@@ -886,6 +889,32 @@ export default function Dashboard() {
     setSiteFilter('ALL');
     setEventsPage(1);
     fetchEventsData({ search: '', status: 'ALL', site: 'ALL', page: 1 });
+  };
+
+  const handlePurgeOldLogs = async () => {
+    const days = configData?.proxy?.logRetentionDays || 30;
+    if (!window.confirm(`Are you sure you want to delete event logs older than ${days} days?`)) {
+      return;
+    }
+    setPurgingLogs(true);
+    try {
+      const res = await authFetch('/api/v1/dashboard/events/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retentionDays: days }),
+      });
+      const data = await res.json();
+      if (data.status) {
+        showToastMsg(`Pruned ${data.deletedLogs || 0} event log(s) older than ${data.retentionDays} days`, 'success');
+        await fetchEventsData();
+      } else {
+        showToastMsg(data.message || 'Log cleanup failed', 'error');
+      }
+    } catch (err) {
+      showToastMsg(`Cleanup failed: ${err.message}`, 'error');
+    } finally {
+      setPurgingLogs(false);
+    }
   };
 
   // Filtered Events
@@ -1658,6 +1687,17 @@ export default function Dashboard() {
                     title="Refresh events list"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${eventsLoading ? 'animate-spin text-cyan-400' : ''}`} />
+                  </button>
+
+                  {/* Purge logs button */}
+                  <button
+                    onClick={handlePurgeOldLogs}
+                    disabled={purgingLogs}
+                    className="px-2.5 py-2 text-xs bg-slate-800/80 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-800/50 border border-slate-700/60 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
+                    title={`Prune event logs older than ${configData.proxy.logRetentionDays || 30} days`}
+                  >
+                    <Trash2 className={`w-3.5 h-3.5 text-rose-400 ${purgingLogs ? 'animate-spin' : ''}`} />
+                    <span className="hidden md:inline">Purge &gt;{configData.proxy.logRetentionDays || 30}d</span>
                   </button>
                 </div>
               </div>
@@ -2685,6 +2725,28 @@ export default function Dashboard() {
                     />
                     <span className="text-[11px] text-slate-500">
                       Default: 86400s (24 hours). Prevents duplicate event ingestion.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-medium mb-1">
+                      Log Retention Period (days) (<code className="text-cyan-400">LOG_RETENTION_DAYS</code>)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={configData.proxy.logRetentionDays || 30}
+                      onChange={e =>
+                        setConfigData({
+                          ...configData,
+                          proxy: { ...configData.proxy, logRetentionDays: Number(e.target.value) },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
+                    />
+                    <span className="text-[11px] text-slate-500">
+                      Default: 30 days. Automatically prunes webhook event logs and expired idempotency records.
                     </span>
                   </div>
                 </div>

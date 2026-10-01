@@ -166,4 +166,60 @@ describe('Queue Service & Retry Mechanism', () => {
 
     await pgQueue.close();
   });
+
+  it('automatically prunes event logs older than retention period (default 30 days)', async () => {
+    // Seed events: one recent (today), one old (35 days ago), and one expired (40 days ago)
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    const recentEvent = {
+      id: 'recent-event-1',
+      eventKey: 'charge.success:rec_1',
+      eventType: 'charge.success',
+      reference: 'rec_1',
+      status: 'SUCCESS',
+      createdAt: new Date(now - 2 * dayMs).toISOString(),
+    };
+
+    const oldEvent1 = {
+      id: 'old-event-1',
+      eventKey: 'charge.success:old_1',
+      eventType: 'charge.success',
+      reference: 'old_1',
+      status: 'SUCCESS',
+      createdAt: new Date(now - 35 * dayMs).toISOString(),
+    };
+
+    const oldEvent2 = {
+      id: 'old-event-2',
+      eventKey: 'charge.success:old_2',
+      eventType: 'charge.success',
+      reference: 'old_2',
+      status: 'FAILED',
+      createdAt: new Date(now - 45 * dayMs).toISOString(),
+    };
+
+    queue.recordEventLog(recentEvent);
+    queue.recordEventLog(oldEvent1);
+    queue.recordEventLog(oldEvent2);
+
+    assert.equal(queue.recentEvents.length, 3);
+
+    // Run cleanup with 30-day retention
+    const result = await queue.cleanupOldLogs(30);
+
+    assert.equal(result.retentionDays, 30);
+    assert.equal(result.deletedLogs, 2);
+    assert.equal(result.memoryDeletedLogs, 2);
+
+    // Recent event remains, 35-day and 45-day events are deleted
+    assert.equal(queue.recentEvents.length, 1);
+    assert.equal(queue.recentEvents[0].id, 'recent-event-1');
+  });
+
+  it('defaults log retention period to 30 days and supports custom override', () => {
+    assert.equal(queue.logRetentionDays, 30);
+    queue.logRetentionDays = 60;
+    assert.equal(queue.logRetentionDays, 60);
+  });
 });

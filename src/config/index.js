@@ -329,6 +329,7 @@ export async function updateConfigAndEnv(updates = {}) {
     if (updates.proxy.redisUrl !== undefined) processField('REDIS_URL', updates.proxy.redisUrl);
     if (updates.proxy.databaseUrl !== undefined) processField('DATABASE_URL', updates.proxy.databaseUrl);
     if (updates.proxy.idempotencyTtlSeconds !== undefined) processField('IDEMPOTENCY_TTL_SECONDS', updates.proxy.idempotencyTtlSeconds);
+    if (updates.proxy.logRetentionDays !== undefined) processField('LOG_RETENTION_DAYS', updates.proxy.logRetentionDays);
   }
   if (updates.notifications) {
     if (updates.notifications.discordWebhookUrl !== undefined) processField('DISCORD_WEBHOOK_URL', updates.notifications.discordWebhookUrl);
@@ -375,6 +376,7 @@ export async function updateConfigAndEnv(updates = {}) {
     databaseUrl: 'DATABASE_URL',
     postgresUrl: 'POSTGRES_URL',
     idempotencyTtlSeconds: 'IDEMPOTENCY_TTL_SECONDS',
+    logRetentionDays: 'LOG_RETENTION_DAYS',
     discordWebhookUrl: 'DISCORD_WEBHOOK_URL',
     telegramBotToken: 'TELEGRAM_BOT_TOKEN',
     telegramChatId: 'TELEGRAM_CHAT_ID',
@@ -401,7 +403,7 @@ export async function updateConfigAndEnv(updates = {}) {
     'PORT', 'NODE_ENV', 'LOG_LEVEL',
     'PAYSTACK_SECRET_KEY', 'PAYSTACK_WEBHOOK_SECRET', 'ENABLE_IP_WHITELIST', 'PAYSTACK_IP_WHITELIST',
     'PROXY_SHARED_SECRET', 'FORWARD_TIMEOUT_MS', 'RETRY_DELAYS_MS', 'MAX_RETRIES',
-    'QUEUE_STORAGE_TYPE', 'SQLITE_DB_PATH', 'REDIS_URL', 'IDEMPOTENCY_TTL_SECONDS',
+    'QUEUE_STORAGE_TYPE', 'SQLITE_DB_PATH', 'REDIS_URL', 'IDEMPOTENCY_TTL_SECONDS', 'LOG_RETENTION_DAYS',
     'DISCORD_WEBHOOK_URL', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'SITES_CONFIG_PATH',
     'DASHBOARD_AUTH_ENABLED', 'DASHBOARD_USERNAME', 'DASHBOARD_PASSWORD', 'DASHBOARD_JWT_SECRET', 'DASHBOARD_SESSION_HOURS',
   ];
@@ -530,6 +532,9 @@ export function applyEnvUpdates(flatEnvUpdates) {
         break;
       case 'IDEMPOTENCY_TTL_SECONDS':
         config.proxy.idempotencyTtlSeconds = parseInt(val, 10) || 86400;
+        break;
+      case 'LOG_RETENTION_DAYS':
+        config.proxy.logRetentionDays = parseInt(val, 10) || 30;
         break;
       case 'DISCORD_WEBHOOK_URL':
         config.notifications.discordWebhookUrl = val;

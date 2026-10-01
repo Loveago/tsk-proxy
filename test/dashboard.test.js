@@ -431,6 +431,42 @@ describe('Web UI Dashboard & Simulator Endpoints', () => {
         assert.equal(res.body.total, 1);
         assert.equal(res.body.events[0].reference, 'ref_page_003');
       });
+
+      it('prunes old events via POST /api/v1/dashboard/events/cleanup', async () => {
+        const now = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+        queueService.recordEventLog({
+          id: 'cleanup-test-old',
+          eventKey: 'charge.success:cleanup_old',
+          eventType: 'charge.success',
+          reference: 'cleanup_old',
+          status: 'SUCCESS',
+          createdAt: new Date(now - 35 * dayMs).toISOString(),
+        });
+        queueService.recordEventLog({
+          id: 'cleanup-test-recent',
+          eventKey: 'charge.success:cleanup_recent',
+          eventType: 'charge.success',
+          reference: 'cleanup_recent',
+          status: 'SUCCESS',
+          createdAt: new Date(now - 1 * dayMs).toISOString(),
+        });
+
+        const res = await authReq
+          .post('/api/v1/dashboard/events/cleanup')
+          .send({ retentionDays: 30 })
+          .expect(200);
+
+        assert.equal(res.body.status, true);
+        assert.equal(res.body.retentionDays, 30);
+        assert.ok(res.body.deletedLogs >= 1);
+
+        const listRes = await authReq.get('/api/v1/dashboard/events').expect(200);
+        const hasOld = listRes.body.events.some(e => e.id === 'cleanup-test-old');
+        const hasRecent = listRes.body.events.some(e => e.id === 'cleanup-test-recent');
+        assert.equal(hasOld, false);
+        assert.equal(hasRecent, true);
+      });
     });
 
     it('simulates webhook routing via metadata.origin_site', async () => {
@@ -646,6 +682,7 @@ describe('Web UI Dashboard & Simulator Endpoints', () => {
       assert.ok(res.body.config.proxy);
       assert.ok(res.body.config.notifications);
       assert.equal(res.body.config.paystack.secretKey, testSecret);
+      assert.equal(res.body.config.proxy.logRetentionDays, 30);
     });
 
     it('updates and immediately applies config without restart via POST /api/v1/dashboard/config', async () => {

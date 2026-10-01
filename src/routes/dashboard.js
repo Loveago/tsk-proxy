@@ -293,6 +293,7 @@ router.get('/config', async (req, res) => {
         sqliteDbPath: config.proxy.sqliteDbPath || './data/proxy.db',
         redisUrl: config.proxy.redisUrl || 'redis://127.0.0.1:6379/0',
         idempotencyTtlSeconds: config.proxy.idempotencyTtlSeconds || 86400,
+        logRetentionDays: config.proxy.logRetentionDays || 30,
       },
       notifications: {
         discordWebhookUrl: config.notifications.discordWebhookUrl || '',
@@ -352,6 +353,7 @@ router.post('/config', async (req, res) => {
           sqliteDbPath: updated.proxy.sqliteDbPath || './data/proxy.db',
           redisUrl: updated.proxy.redisUrl || 'redis://127.0.0.1:6379/0',
           idempotencyTtlSeconds: updated.proxy.idempotencyTtlSeconds || 86400,
+          logRetentionDays: updated.proxy.logRetentionDays || 30,
         },
         notifications: {
           discordWebhookUrl: updated.notifications.discordWebhookUrl || '',
@@ -729,6 +731,24 @@ router.get('/events', async (req, res) => {
     limit: result.limit || limit,
     totalPages,
     events,
+  });
+});
+
+/**
+ * POST /api/v1/dashboard/events/cleanup
+ * Manually or programmatically triggers log retention cleanup
+ */
+router.post('/events/cleanup', requireDashboardAuth, async (req, res) => {
+  const retentionDays = req.body?.retentionDays !== undefined
+    ? parseInt(req.body.retentionDays, 10)
+    : (config.proxy.logRetentionDays || 30);
+
+  const cleanupResult = await queueService.cleanupOldLogs(retentionDays);
+
+  res.json({
+    status: true,
+    message: `Cleaned up event logs older than ${cleanupResult.retentionDays} days`,
+    ...cleanupResult,
   });
 });
 
